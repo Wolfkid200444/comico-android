@@ -28,7 +28,7 @@ fun AccountSettings(state: AppState, model: ReaderViewModel) {
         Text("Account",style = MaterialTheme.typography.titleLarge)
         if(account.user != null) {
             ListItem(headlineContent = { Text(account.user.name.ifBlank { account.user.username }) },supportingContent = { Column { Text(account.user.email);Text(if(account.user.verified) "Email verified" else "Email not verified") } },leadingContent = { Icon(Icons.Rounded.Person,null) })
-            OutlinedButton(onClick = model::signOut,enabled = !account.loading) { Text("Sign out") }
+            OutlinedButton(onClick = model::signOut,enabled = !account.loading && !state.syncLoading && !state.accountDataLoading) { Text("Sign out") }
         } else {
             Text("Sign in to your comico.moe account or create one.",style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -39,7 +39,7 @@ fun AccountSettings(state: AppState, model: ReaderViewModel) {
         if(account.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         account.error?.let { Text(it,color = MaterialTheme.colorScheme.error);TextButton(onClick = model::refreshAccount,enabled = !account.loading) { Text("Check session again") } }
         account.message?.let { Text(it,style = MaterialTheme.typography.bodyMedium) }
-        Text("Passwords aren't saved. Your session is encrypted on this device. Your library and reading preferences remain local; account library sync isn't included yet.",style = MaterialTheme.typography.bodySmall,color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Passwords aren't saved. Your session is encrypted on this device. Your account library and reading history sync with comico.moe. Reading preferences stay on this device.",style = MaterialTheme.typography.bodySmall,color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

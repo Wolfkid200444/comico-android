@@ -14,6 +14,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class AppState(
+    val discoverFeed: DiscoverFeed = DiscoverFeed.UPDATED, val history: List<HistoryEntry> = emptyList(),
+    val syncLoading: Boolean = false, val syncError: String? = null, val lastSync: String? = null,
+    val leaderboard: List<LeaderboardEntry> = emptyList(), val leaderboardLoading: Boolean = false, val leaderboardError: String? = null,
+    val comments: List<AccountComment> = emptyList(), val profileBio: String = "", val accountDataLoading: Boolean = false, val accountDataError: String? = null,
     val tab: String = "Discover", val query: String = "", val format: String = "All",
     val catalog: List<Manga> = emptyList(), val total: Int = 0, val offset: Int = 0,
     val loading: Boolean = false, val error: String? = null,
@@ -38,6 +42,10 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("reader", 0)
     private val mutable = MutableStateFlow(AppState())
     val state = mutable.asStateFlow()
+    private var syncJob: Job? = null
+    private var progressSyncJob: Job? = null
+    private var accountDataJob: Job? = null
+    private var activeOwner: String? = null
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
     private var chaptersJob: Job? = null
@@ -53,13 +61,16 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         mutable.update { it.copy(readerPreferences = readerPreferences, readerOverrides = overrides, knownSources = knownSources) }
         val searchFilters = runCatching { JSONObject(prefs.getString("searchFilters", "{}")!!).searchFilters() }.getOrDefault(SearchFilters())
         mutable.update { it.copy(searchFilters = searchFilters, format = searchFilters.type?.apiValue?.replaceFirstChar { c -> c.uppercase() } ?: "All") }
+        loadOwner(null)
         loadCatalog()
         refreshAccount()
     }
     fun tab(value: String) {
         val reset = value == "Discover" && mutable.value.query.isNotEmpty()
         mutable.update { it.copy(tab = value, query = if(reset) "" else it.query) }
-        if(reset) loadCatalog()
+        if(value == "Discover" || value == "Search") loadCatalog()
+        if(value == "Library" || value == "History") syncAccount()
+        if(value == "Leaderboard") loadLeaderboard()
     }
     fun search(value: String) { mutable.update { it.copy(query = value) }; loadCatalog(debounce = true) }
     fun format(value: String) { applySearchFilters(mutable.value.searchFilters.copy(type = MangaType.entries.find { it.apiValue.equals(value,ignoreCase = true) })) }
@@ -71,7 +82,14 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             mutable.update { it.copy(loading = true, error = null, catalog = if(more) it.catalog else emptyList()) }
             try {
                 if(debounce) delay(400)
-                val result = api.catalog(before.query, offset, before.searchFilters)
+                val result = if(before.tab == "Discover") {
+                    val items = when(before.discoverFeed) {
+                        DiscoverFeed.UPDATES -> api.followedUpdates()
+                        DiscoverFeed.HISTORY -> mutable.value.history.map { it.manga }.distinctBy { it.id }
+                        else -> api.discover(before.discoverFeed,before.searchFilters)
+                    }
+                    PageResult(items,items.size)
+                } else api.catalog(before.query, offset, before.searchFilters)
                 mutable.update { it.copy(catalog = (if(more) it.catalog else emptyList()).plus(result.items).distinctBy { m -> m.id }, total = result.total, offset = offset + 30, loading = false) }
             } catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(loading = false, error = e.message ?: "Could not connect to Comico.") } }
         }
@@ -112,23 +130,30 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun back() {
-        if(mutable.value.reader != null) { readerJob?.cancel(); mutable.update { it.copy(reader = null, nativeReader = NativeReaderState()) } }
+        if(mutable.value.reader != null) { readerJob?.cancel(); mutable.update { it.copy(reader = null, nativeReader = NativeReaderState()) };progressSyncJob?.cancel();syncAccount() }
         else { detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); mutable.update { it.copy(selected = null, chapterLoading = false) } }
     }
     fun read(chapter: Chapter) = openReader(chapter,false)
     fun startReading() { mutable.value.firstChapter?.let { openReader(it,true) } }
     private fun openReader(chapter: Chapter, fromBeginning: Boolean) {
         val id = mutable.value.selected?.id ?: return
-        mutable.update { it.copy(reader = chapter, progress = it.progress + (id to chapter), nativeReader = NativeReaderState(page = if(fromBeginning) 0 else prefs.getInt("readerPage:${chapter.id}",0))) }
+        mutable.update { it.copy(reader = chapter, progress = it.progress + (id to chapter), nativeReader = NativeReaderState(page = if(fromBeginning) 0 else prefs.getInt(ownerKey("readerPage:${chapter.id}"),0))) }
         val data = JSONObject(); mutable.value.progress.forEach { (key, c) -> data.put(key, JSONObject().put("id",c.id).put("number",c.number).put("title",c.title).put("language",c.language).put("scanlationGroup",c.group).put("externalUrl",c.external)) }
-        prefs.edit().putString("progress", data.toString()).apply()
-        if(fromBeginning) prefs.edit().putInt("readerPage:${chapter.id}",0).apply()
+        prefs.edit().putString(ownerKey("progress"), data.toString()).apply()
+        if(fromBeginning) prefs.edit().putInt(ownerKey("readerPage:${chapter.id}"),0).apply()
+        recordHistory(chapter,if(fromBeginning) 0 else mutable.value.nativeReader.page,0)
         loadReader()
     }
     fun bookmark(manga: Manga) {
-        mutable.update { s -> s.copy(library = if(s.library.any { it.id == manga.id }) s.library.filterNot { it.id == manga.id } else s.library + manga) }
-        val data = JSONArray(); mutable.value.library.forEach { m -> data.put(JSONObject().put("id",m.id).put("title",m.title).put("coverUrl",m.cover).put("status",m.status).put("format",m.format).put("description",m.description).put("contentRating",m.rating).put("tags",JSONArray(m.tags.map { JSONObject().put("name",it) }))) }
-        prefs.edit().putString("library",data.toString()).apply()
+        if(mutable.value.account.loading) return
+        val saved = mutable.value.library.none { it.id == manga.id }
+        mutable.update { it.copy(library = if(saved) it.library + manga else it.library.filterNot { m -> m.id == manga.id }) }
+        persistLibrary()
+        activeOwner?.let {
+            val queue = pending("bookmarks").put(manga.id,saved)
+            prefs.edit().putString(ownerKey("pending:bookmarks"),queue.toString()).apply()
+            syncAccount()
+        }
     }
     fun theme(value: String) { mutable.update { it.copy(theme = value) }; prefs.edit().putString("theme",value).apply() }
     fun dynamic(value: Boolean) { mutable.update { it.copy(dynamicColor = value) }; prefs.edit().putBoolean("dynamic",value).apply() }
@@ -178,6 +203,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                 val notice = if(preferences.source != null && preferred == null) "Your preferred source is unavailable for this chapter. Using Auto." else null
                 val session = nativeRepository.open(chapter.id, preferred, preferences.proxy)
                 mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = false, session = session, notice = notice, page = it.nativeReader.page.coerceIn(0,session.pages.lastIndex))) }
+                recordHistory(chapter,mutable.value.nativeReader.page,session.pages.size)
             } catch(e: CancellationException) { throw e }
             catch(e: Exception) { mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = false, error = e.message ?: "Couldn't load this chapter. Try another source or proxy method.")) } }
         }
@@ -188,7 +214,8 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         val value = page.coerceIn(0,count - 1)
         if(value == mutable.value.nativeReader.page) return
         mutable.update { it.copy(nativeReader = it.nativeReader.copy(page = value)) }
-        prefs.edit().putInt("readerPage:${chapter.id}",value).apply()
+        prefs.edit().putInt(ownerKey("readerPage:${chapter.id}"),value).apply()
+        recordHistory(chapter,value,count)
     }
 
     fun applySearchFilters(filters: SearchFilters) {
@@ -207,25 +234,25 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
 
     fun refreshAccount() {
-        if(mutable.value.account.loading) return
+        if(mutable.value.account.loading || mutable.value.syncLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(account = it.account.copy(loading = true,error = null)) }
-            try { val user = api.account();mutable.update { it.copy(account = AccountState(user = user)) } }
+            try { val user = api.account();mutable.update { it.copy(account = AccountState(user = user)) }; activateAccount(user) }
             catch(e: CancellationException) { throw e }
             catch(e: Exception) { mutable.update { it.copy(account = it.account.copy(loading = false,error = e.message)) } }
         }
     }
     fun signIn(identifier: String, password: String) {
-        if(mutable.value.account.loading) return
+        if(mutable.value.account.loading || mutable.value.syncLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(account = AccountState(loading = true)) }
-            try { val user = api.signIn(identifier,password);mutable.update { it.copy(account = AccountState(user = user,message = "Signed in.")) } }
+            try { val user = api.signIn(identifier,password);mutable.update { it.copy(account = AccountState(user = user,message = "Signed in.")) }; activateAccount(user) }
             catch(e: CancellationException) { throw e }
             catch(e: Exception) { mutable.update { it.copy(account = AccountState(error = e.message ?: "Couldn't sign in.")) } }
         }
     }
     fun register(username: String, name: String, email: String, password: String) {
-        if(mutable.value.account.loading) return
+        if(mutable.value.account.loading || mutable.value.syncLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(account = AccountState(loading = true)) }
             try { api.register(username,name,email,password);mutable.update { it.copy(account = AccountState(message = "Account created. Check your email to verify it, then sign in.")) } }
@@ -234,7 +261,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun signOut() {
-        if(mutable.value.account.loading) return
+        if(mutable.value.account.loading || mutable.value.syncLoading || mutable.value.accountDataLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(account = it.account.copy(loading = true,error = null,message = null)) }
             var message = "Signed out."
@@ -243,6 +270,157 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             catch(_: Exception) { message = "Signed out on this device. Comico could not confirm server-side sign-out." }
             finally { accountCookies.clear() }
             mutable.update { it.copy(account = AccountState(message = message)) }
+            activateAccount(null)
+        }
+    }
+    private fun ownerKey(key: String) = accountStorageKey(key,activeOwner)
+    private fun pending(kind: String) = runCatching { JSONObject(prefs.getString(ownerKey("pending:$kind"),"{}")!!) }.getOrDefault(JSONObject())
+    private fun persistLibrary() { prefs.edit().putString(ownerKey("library"),JSONArray(mutable.value.library.map { it.toJson() }).toString()).apply() }
+    private fun persistHistory() { prefs.edit().putString(ownerKey("history"),JSONArray(mutable.value.history.map { it.toJson() }).toString()).apply() }
+    private fun loadOwner(owner: String?) {
+        activeOwner = owner
+        val library = runCatching { JSONArray(prefs.getString(ownerKey("library"),"[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
+        val history = runCatching { JSONArray(prefs.getString(ownerKey("history"),"[]")).objects().map { it.historyEntry() } }.getOrDefault(emptyList())
+        val progress = runCatching { JSONObject(prefs.getString(ownerKey("progress"),"{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
+        mutable.update { it.copy(library = library,history = history,progress = progress,syncError = null,lastSync = null,comments = emptyList(),profileBio = "",accountDataError = null,discoverFeed = if(owner == null && it.discoverFeed.accountOnly) DiscoverFeed.UPDATED else it.discoverFeed) }
+    }
+    private fun activateAccount(user: AccountUser?) {
+        progressSyncJob?.cancel();accountDataJob?.cancel()
+        if(activeOwner != user?.id) loadOwner(user?.id)
+        if(user != null) { syncAccount();loadAccountData() }
+        if(mutable.value.tab == "Discover") loadCatalog()
+    }
+    fun discoverFeed(feed: DiscoverFeed) {
+        if(feed.accountOnly && mutable.value.account.user == null) return
+        mutable.update { it.copy(discoverFeed = feed) };loadCatalog()
+        if(feed.accountOnly) syncAccount()
+    }
+    private fun recordHistory(chapter: Chapter, page: Int, pageCount: Int) {
+        val manga = mutable.value.selected ?: return
+        val previous = mutable.value.history.firstOrNull { it.chapter.id == chapter.id }
+        val entry = HistoryEntry(manga,chapter,page,if(pageCount > 0) pageCount else previous?.pageCount ?: 0,java.time.Instant.now().toString())
+        mutable.update { it.copy(history = mergeHistory(emptyList(),it.history.filterNot { h -> h.chapter.id == chapter.id } + entry).take(1000)) }
+        persistHistory()
+        if(activeOwner != null && entry.pageCount > 0) {
+            prefs.edit().putString(ownerKey("pending:progress"),pending("progress").put(chapter.id,entry.toJson()).toString()).apply()
+            progressSyncJob?.cancel()
+            progressSyncJob = viewModelScope.launch { delay(1500);syncAccount() }
+        }
+    }
+    fun openHistory(entry: HistoryEntry) {
+        open(entry.manga)
+        prefs.edit().putInt(ownerKey("readerPage:${entry.chapter.id}"),entry.page).apply()
+        read(entry.chapter)
+    }
+    fun syncAccount() {
+        val user = mutable.value.account.user ?: return
+        if(mutable.value.syncLoading || mutable.value.account.loading) return
+        mutable.update { it.copy(syncLoading = true,syncError = null) }
+        syncJob = viewModelScope.launch {
+            val failures = mutableListOf<String>()
+            try {
+                try {
+                    val bookmarks = pending("bookmarks")
+                    for(id in bookmarks.keys().asSequence().toList()) {
+                        val saved = bookmarks.getBoolean(id)
+                        api.changeBookmark(id,saved)
+                        val current = pending("bookmarks")
+                        if(current.opt(id) == saved) { current.remove(id);prefs.edit().putString(ownerKey("pending:bookmarks"),current.toString()).apply() }
+                    }
+                    val remote = api.library()
+                    val queued = pending("bookmarks")
+                    val additions = mutable.value.library.filter { queued.optBoolean(it.id,false) }
+                    mutable.update { it.copy(library = (remote.filterNot { m -> queued.has(m.id) && !queued.getBoolean(m.id) } + additions).distinctBy { m -> m.id }) }
+                    persistLibrary()
+                } catch(e: CancellationException) { throw e } catch(e: Exception) { failures += "Library: ${e.message}" }
+                try {
+                    val remote = api.history()
+                    val queued = pending("progress")
+                    val uploaded = mutableListOf<HistoryEntry>()
+                    for(id in queued.keys().asSequence().toList()) {
+                        val entry = queued.getJSONObject(id).historyEntry()
+                        val latest = remote.firstOrNull { it.chapter.id == id }
+                        if(latest == null || java.time.Instant.parse(entry.readAt) > java.time.Instant.parse(latest.readAt)) { api.saveProgress(entry);uploaded += entry }
+                        val current = pending("progress")
+                        if(current.optJSONObject(id)?.toString() == entry.toJson().toString()) { current.remove(id);prefs.edit().putString(ownerKey("pending:progress"),current.toString()).apply() }
+                    }
+                    val stillPending = pending("progress").let { entries -> entries.keys().asSequence().map { entries.getJSONObject(it).historyEntry() }.toList() }
+                    val merged = accountHistorySnapshot(remote,uploaded,stillPending,mutable.value.history)
+                    mutable.update { it.copy(history = merged,progress = merged.asReversed().associate { h -> h.manga.id to h.chapter }) }
+                    merged.forEach { prefs.edit().putInt(ownerKey("readerPage:${it.chapter.id}"),it.page).apply() }
+                    persistHistory()
+                    val progress = JSONObject();mutable.value.progress.forEach { (id, chapter) -> progress.put(id,chapter.toJson()) }
+                    prefs.edit().putString(ownerKey("progress"),progress.toString()).apply()
+                } catch(e: CancellationException) { throw e } catch(e: Exception) { failures += "History: ${e.message}" }
+                mutable.update { it.copy(lastSync = if(failures.isEmpty()) java.time.Instant.now().toString() else it.lastSync,syncError = failures.joinToString("\n").ifEmpty { null }) }
+                if(mutable.value.tab == "Discover" && mutable.value.discoverFeed.accountOnly) loadCatalog()
+            } finally {
+                mutable.update { it.copy(syncLoading = false) }
+                if(failures.isEmpty() && (pending("bookmarks").length() > 0 || pending("progress").length() > 0)) syncAccount()
+            }
+        }
+    }
+    fun loadLeaderboard() {
+        if(mutable.value.leaderboardLoading) return
+        viewModelScope.launch {
+            mutable.update { it.copy(leaderboardLoading = true,leaderboardError = null) }
+            try { val entries = api.leaderboard();mutable.update { it.copy(leaderboard = entries) } }
+            catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(leaderboardError = e.message) } }
+            finally { mutable.update { it.copy(leaderboardLoading = false) } }
+        }
+    }
+    fun loadAccountData() {
+        val user = mutable.value.account.user ?: return
+        accountDataJob?.cancel()
+        accountDataJob = viewModelScope.launch {
+            mutable.update { it.copy(accountDataLoading = true,accountDataError = null) }
+            try {
+                val settings = api.profileSettings()
+                mutable.update { it.copy(profileBio = settings.optString("bio").takeUnless { value -> value == "null" }.orEmpty()) }
+                val comments = api.comments(user.username)
+                mutable.update { it.copy(comments = comments) }
+            } catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(accountDataError = e.message) } }
+            finally { mutable.update { it.copy(accountDataLoading = false) } }
+        }
+    }
+    fun saveProfile(name: String, username: String, bio: String) {
+        if(mutable.value.accountDataLoading || mutable.value.account.user == null) return
+        accountDataJob = viewModelScope.launch {
+            mutable.update { it.copy(accountDataLoading = true,accountDataError = null) }
+            try { api.saveProfile(name,username,bio);val user = api.account();mutable.update { it.copy(account = it.account.copy(user = user),profileBio = bio) } }
+            catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(accountDataError = e.message) } }
+            finally { mutable.update { it.copy(accountDataLoading = false) } }
+        }
+    }
+    fun importGuestData() {
+        if(activeOwner == null || mutable.value.syncLoading || mutable.value.account.loading) return
+        val guestLibrary = runCatching { JSONArray(prefs.getString("library","[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
+        val guestHistory = runCatching { JSONArray(prefs.getString("history","[]")).objects().map { it.historyEntry() } }.getOrDefault(emptyList())
+        val bookmarks = pending("bookmarks")
+        guestLibrary.filter { guest -> mutable.value.library.none { it.id == guest.id } }.forEach { bookmarks.put(it.id,true) }
+        val progress = pending("progress")
+        mergeHistory(guestHistory,mutable.value.history).filter { entry -> entry.pageCount > 0 && guestHistory.any { it.chapter.id == entry.chapter.id } }.forEach { progress.put(it.chapter.id,it.toJson()) }
+        mutable.update { it.copy(library = (it.library + guestLibrary).distinctBy { m -> m.id },history = mergeHistory(it.history,guestHistory)) }
+        persistLibrary();persistHistory()
+        prefs.edit().putString(ownerKey("pending:bookmarks"),bookmarks.toString()).putString(ownerKey("pending:progress"),progress.toString()).apply()
+        syncAccount()
+    }
+    fun exportData() = JSONObject().put("version",1).put("library",JSONArray(mutable.value.library.map { it.toJson() })).put("history",JSONArray(mutable.value.history.map { it.toJson() })).put("readerDefaults",mutable.value.readerPreferences.toJson()).toString(2)
+    fun clearHistory() {
+        if(mutable.value.syncLoading || mutable.value.account.loading) return
+        viewModelScope.launch {
+            mutable.update { it.copy(syncLoading = true,syncError = null) }
+            try {
+                if(activeOwner != null) api.clearHistory()
+                mutable.update { it.copy(history = emptyList(),progress = emptyMap()) }
+                persistHistory()
+                prefs.edit().apply {
+                    remove(ownerKey("progress"));remove(ownerKey("pending:progress"))
+                    val suffix = activeOwner?.let { ":account:$it" }
+                    prefs.all.keys.filter { key -> key.startsWith("readerPage:") && if(suffix == null) !key.contains(":account:") else key.endsWith(suffix) }.forEach { remove(it) }
+                }.apply()
+            } catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(syncError = "Couldn't clear history: ${e.message}") } }
+            finally { mutable.update { it.copy(syncLoading = false) } }
         }
     }
     fun clearAccountMessages() { if(!mutable.value.account.loading) mutable.update { it.copy(account = it.account.copy(error = null,message = null)) } }

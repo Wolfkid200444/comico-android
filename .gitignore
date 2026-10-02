@@ -6,3 +6,5 @@ local.properties
 .idea/
 __pycache__/
 *.pyc
+
+.kotlin/

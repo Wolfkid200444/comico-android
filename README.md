@@ -14,7 +14,7 @@ If no release is available yet, check the [APK build workflow](https://github.co
 To install from a computer with Android platform tools and USB debugging enabled:
 
 ```sh
-adb install -r comico-android-0.3.0.apk
+adb install -r comico-android-0.4.0.apk
 ```
 
 Replace the filename with the APK you downloaded. Future builds use the same signing key and application ID, so installing a newer version keeps your local library. If an earlier build used a different signing key, Android requires uninstalling it first, which removes its local data.
@@ -23,14 +23,17 @@ Automated builds are debug APKs signed with the public test key in `signing/debu
 
 ## Features
 
-- Discover manga and webtoons, search titles, and load more results.
+- Discover recently updated, popular, newly released, and most followed titles.
+- Search manga and webtoons with filters and load more results.
+- Sync account libraries and reading history, browse your comments, and edit your profile.
+- View the public experience leaderboard.
 - Browse covers in an adaptive grid with tablet navigation.
 - View title details and chapters, with translation language selection.
 - Save titles and resume at your last read page on this device.
 - Use the website’s dark colors by default, or choose light, dark, or system appearance, with optional Android wallpaper colors.
 - Read chapters as native images with long strip, single page, or double page layouts, pinch zoom, and chapter navigation. Publisher-only chapters link to the original reader.
 
-The catalog defaults to Comico's `safe` content rating; use the content filter to change it. Account sign-in and registration are available in Settings. Cloud sync and offline downloads are not implemented.
+The catalog defaults to Comico's `safe` content rating; use the content filter to change it. Account sign-in and registration are available in Settings. Library and history sync are available. Offline chapter downloads are not implemented.
 
 ## Search filters
 
@@ -72,7 +75,19 @@ The app icon uses the supplied comico.moe logo.
 
 ## Account
 
-Open **Settings → Account** to sign in with your email or username, create an account, or sign out. Registration may require email verification before signing in. Passwords are not saved. Session cookies are encrypted with Android Keystore and sent only to comico.moe over HTTPS. Bookmarks and reading progress remain local; account sync is not implemented.
+Open **Settings → Account** to sign in with your email or username, create an account, or sign out. Registration may require email verification before signing in. Passwords are not saved. Session cookies are encrypted with Android Keystore and sent only to comico.moe over HTTPS.
+
+Signing in loads your account library and server-side reading history. Saving or removing a title updates your account library. Native chapter reading sends chapter, page, page count, and completion progress to the same endpoint used by the website. Offline changes are queued for that account and retried when you open Library or History, resume reading, or tap **Sync now**. Sync errors remain visible with a retry button.
+
+Each account has its own cache and pending changes. Signing out restores the guest library and history. To add guest data to an account, use **Settings → Data → Add guest library and history to this account**. This imports guest data without deleting the guest copy. Clearing account history clears it on both the website and this device. Reader preferences remain local.
+
+**Settings** has Profile, Comments, Reading, Preferences, and Data tabs. While signed out, only Reading and Preferences are enabled; sign-in and registration remain available above the tabs. Profile lets you edit your name, username, and bio. Comments displays your recent website comments. Data includes manual sync, guest import, a JSON export, and history clearing.
+
+**History** lists chapters and saved page positions; tap an entry to resume. **Leaderboard** shows the website’s top 50 accounts by experience and links to their public profiles.
+
+**Discover** has Recently updated, Recent popular, New releases, and Most followed feeds from the website’s title statistics endpoint. Signing in adds New chapters from followed comics and Reading history. Search remains accessible through the top search icon.
+
+See [account sync contracts](docs/account-sync.md) for endpoints and implementation details.
 
 ## Build the app
 
@@ -140,19 +155,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 The app and the GitHub workflow both read `version.properties`:
 
 ```properties
-VERSION_NAME=0.3.0
-VERSION_CODE=3
+VERSION_NAME=0.4.0
+VERSION_CODE=4
 ```
 
 To publish the next version:
 
 1. Finish the code changes you want included in the APK.
-2. Update **both** values. For example, use `VERSION_NAME=0.4.0` and `VERSION_CODE=4`. The version name must use `major.minor.patch`, and both values must increase.
+2. Update **both** values. For example, use `VERSION_NAME=0.5.0` and `VERSION_CODE=5`. The version name must use `major.minor.patch`, and both values must increase.
 3. Commit the version change and push it to `main`:
 
    ```sh
    git add version.properties
-   git commit -m "Release version 0.4.0"
+   git commit -m "Release version 0.5.0"
    git push origin main
    ```
 
@@ -160,8 +175,8 @@ The [workflow](.github/workflows/build-apk.yml) then:
 
 - Validates the version change.
 - Runs unit tests and Android lint, then builds the debug APK.
-- Uploads `comico-android-0.4.0.apk` and its SHA-256 checksum as workflow artifacts.
-- Creates the `v0.4.0` tag and GitHub release at the exact commit that triggered the build.
+- Uploads `comico-android-0.5.0.apk` and its SHA-256 checksum as workflow artifacts.
+- Creates the `v0.5.0` tag and GitHub release at the exact commit that triggered the build.
 
 The initial push also publishes the starting version. Other source changes do not trigger this release workflow until you update the version file. Editing comments or whitespace without changing the version values skips the build. Existing releases remain unchanged.
 
@@ -173,4 +188,4 @@ The app reads Comico's catalog, search, title details, and chapter endpoints. Se
 
 Public API requests include a descriptive User-Agent. Search waits 400ms after typing and cancels superseded requests. The app shows loading, empty, retry, and network error states.
 
-Bookmarks, last opened chapters, page positions, and reader settings are stored in private on-device preferences. The Kotlin reader obtains normal access tokens and session image URLs from Comico; no HTML reader or WebView is embedded. Provider metadata may be parsed from its source page when that provider exposes image information there.
+Account libraries and reading history sync with comico.moe and are cached in private on-device preferences. Guest bookmarks and history remain local. Reader settings stay on this device. The Kotlin reader obtains normal access tokens and session image URLs from Comico; no HTML reader or WebView is embedded. Provider metadata may be parsed from its source page when that provider exposes image information there.

@@ -22,19 +22,21 @@ fun JSONObject.chapter() = Chapter(getString("id"), optString("number", "?"), op
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 fun absoluteUrl(value: String): String = if (value.startsWith("/")) BASE_URL + value else value
 
-class ComicoApi(private val accountCookies: AccountCookieJar? = null) {
+class ComicoApi(private val accountCookies: AccountCookieJar? = null, private val baseUrl: String = BASE_URL) {
     private val client = OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).apply { accountCookies?.let { cookieJar(it) } }.build()
-    suspend fun requestText(url: String, body: JSONObject? = null): String = withContext(Dispatchers.IO) {
+    suspend fun requestText(url: String, body: JSONObject? = null, method: String = if(body == null) "GET" else "POST"): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url)
             .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
-            .apply { if(url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/auth/")) header("Origin",BASE_URL) }
-            .apply { if(body != null) post(body.toString().toRequestBody("application/json".toMediaType())) }
+            .apply { if(url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/")) header("Origin",BASE_URL) }
+            .apply { if(method != "GET") method(method,if(method == "DELETE") null else (body ?: JSONObject()).toString().toRequestBody("application/json".toMediaType())) }
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful && url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/auth/")) {
                 val error = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
                 throw IOException(accountErrorMessage(error?.optString("code").orEmpty(),error?.optString("message")?.takeIf { it.isNotBlank() } ?: "Account request failed with HTTP ${response.code}. Try again."))
             }
+            val accountRoute = url.toHttpUrl().host == "comico.moe" && listOf("/api/library","/api/history","/api/progress","/api/settings").any { url.toHttpUrl().encodedPath.startsWith(it) }
+            if (!response.isSuccessful && accountRoute && response.code in listOf(401,403)) throw IOException("Your account session is unavailable. Sign out and sign in again.")
             if (!response.isSuccessful) throw IOException(when(response.code) {
                 429 -> "Too many requests. Wait a minute and try again."
                 404 -> "This title or chapter is no longer available."
@@ -45,38 +47,76 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null) {
         }
     }
     suspend fun get(path: String, query: Map<String, String> = emptyMap()): JSONObject {
-        val url = (BASE_URL + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
+        val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString()))
     }
     suspend fun post(path: String, query: Map<String, String>, body: JSONObject): JSONObject {
-        val url = (BASE_URL + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
+        val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString(), body))
     }
-    suspend fun mangaSources(id: String) = JSONArray(requestText("$BASE_URL/api/manga/$id/sources")).objects().map {
+    suspend fun mangaSources(id: String) = JSONArray(requestText("$baseUrl/api/manga/$id/sources")).objects().map {
         ReaderSource(it.getString("sourceId"), it.optString("name", it.getString("sourceId")), it.optInt("readableChapterCount") > 0)
     }
-    suspend fun readerSources(id: String) = JSONArray(requestText("$BASE_URL/api/reader/chapters/$id/sources?direct=true")).objects().map {
+    suspend fun readerSources(id: String) = JSONArray(requestText("$baseUrl/api/reader/chapters/$id/sources?direct=true")).objects().map {
         ReaderSource(it.getString("readerSourceId"), it.optString("name", it.getString("readerSourceId")), it.optBoolean("readable", true), it.optString("providerSourceName").takeUnless { name -> name.isBlank() || name == "null" })
     }.distinctBy { it.id }
     suspend fun catalog(query: String, offset: Int, filters: SearchFilters): PageResult<Manga> {
         val search = query.isNotBlank() || filters.tags.isNotEmpty()
-        val url = (BASE_URL + if(search) "/api/search" else "/api/manga").toHttpUrl().newBuilder()
+        val url = (baseUrl + if(search) "/api/search" else "/api/manga").toHttpUrl().newBuilder()
         filters.query(query,offset).forEach { (key,value) -> url.addQueryParameter(key,value) }
         val data = JSONObject(requestText(url.build().toString()))
         return PageResult(data.optJSONArray("items").objects().map { it.manga() }.filter { it.rating in filters.allowedRatings() },data.optInt("total"))
     }
-    suspend fun comickTags() = JSONArray(requestText("$BASE_URL/api/tags?source=comick-metadata")).objects().map { ComickTag(it.getString("id"),it.getString("name")) }.sortedBy { it.name.lowercase() }
+    suspend fun comickTags() = JSONArray(requestText("$baseUrl/api/tags?source=comick-metadata")).objects().map { ComickTag(it.getString("id"),it.getString("name")) }.sortedBy { it.name.lowercase() }
     suspend fun detail(id: String) = get("/api/manga/$id").manga()
     suspend fun chapters(id: String, language: String, offset: Int, source: String? = null): PageResult<Chapter> {
         val data = get("/api/manga/$id/chapters", mapOf("language" to language, "limit" to "50", "offset" to offset.toString(), "order" to "desc", "sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
         return PageResult(data.optJSONArray("items").objects().map { it.chapter() }, data.optInt("total"))
+    }
+    suspend fun library(): List<Manga> {
+        val entries = mutableListOf<Manga>()
+        var offset = 0
+        while(true) {
+            val data = get("/api/library",mapOf("limit" to "100","offset" to offset.toString(),"sort" to "recent"))
+            val batch = data.getJSONArray("items").objects()
+            entries += batch.map { it.getJSONObject("manga").manga() }
+            offset += batch.size
+            if(batch.size < 100 || (data.has("total") && offset >= data.getInt("total"))) break
+        }
+        return entries.distinctBy { it.id }
+    }
+    suspend fun changeBookmark(id: String, saved: Boolean) {
+        requestText("$baseUrl/api/library/$id",if(saved) JSONObject().put("status","plan_to_read") else null,if(saved) "PUT" else "DELETE")
+    }
+    suspend fun history() = JSONArray(requestText("$baseUrl/api/history")).objects().map { it.historyEntry() }
+    suspend fun saveProgress(entry: HistoryEntry) {
+        requestText("$baseUrl/api/progress/${entry.manga.id}",entry.progressPayload())
+    }
+    suspend fun clearHistory() { requestText("$baseUrl/api/history",method = "DELETE") }
+    suspend fun leaderboard() = JSONArray(requestText("$baseUrl/api/stats/levels?limit=50")).objects().map { it.leaderboardEntry() }
+    suspend fun followedUpdates() = get("/api/library/updates",mapOf("limit" to "50")).getJSONArray("items").objects().map { it.getJSONObject("manga").manga() }.distinctBy { it.id }
+    suspend fun discover(feed: DiscoverFeed, filters: SearchFilters): List<Manga> {
+        val url = "$baseUrl/api/stats/titles".toHttpUrl().newBuilder().addQueryParameter("sort",feed.sort).addQueryParameter("limit","50")
+        filters.allowedRatings().forEach { url.addQueryParameter("contentRating",it) }
+        filters.type?.let { url.addQueryParameter("formats",it.apiValue) }
+        filters.demographic?.let { url.addQueryParameter("demographic",it.apiValue) }
+        return JSONArray(requestText(url.build().toString())).objects().map { it.manga() }.filter { it.rating in filters.allowedRatings() }
+    }
+    suspend fun profileSettings() = get("/api/settings")
+    suspend fun saveProfile(name: String, username: String, bio: String) {
+        requestText("$baseUrl/api/auth/update-user",JSONObject().put("name",name.trim()).put("username",username.trim()))
+        requestText("$baseUrl/api/settings",JSONObject().put("bio",bio.trim().ifEmpty { null } ?: JSONObject.NULL),"PATCH")
+    }
+    suspend fun comments(username: String): List<AccountComment> {
+        val url = "$baseUrl/api/users".toHttpUrl().newBuilder().addPathSegment(username).addPathSegment("comments").addQueryParameter("limit","50").build()
+        return JSONArray(requestText(url.toString())).objects().map { it.accountComment() }
     }
     suspend fun firstChapter(id: String, language: String, source: String?): Chapter? {
         val data = get("/api/manga/$id/chapters",mapOf("language" to language,"limit" to "1","offset" to "0","order" to "asc","sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
         return data.optJSONArray("items").objects().firstOrNull()?.chapter()
     }
     suspend fun account(): AccountUser? {
-        val text = requestText("$BASE_URL/api/auth/get-session?disableCookieCache=true")
+        val text = requestText("$baseUrl/api/auth/get-session?disableCookieCache=true")
         if(text.trim() == "null") return null
         return JSONObject(text).optJSONObject("user")?.accountUser()
     }
