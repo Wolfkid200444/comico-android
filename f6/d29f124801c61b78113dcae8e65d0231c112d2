@@ -1,0 +1,61 @@
+app/src/main/java/moe/comico/reader/AccountData.kt
+  s_25aa5a699a841d::t_dd7089d3ae4604 23-24
+  s_25aa5a699a841d::t_acf8571744018d 1-22
+  s_25aa5a699a841d::t_8dca2e209ceb40 25-27
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  s_25aa5a699a841d::t_39f3face7f2511 1-144,147-151
+  s_25aa5a699a841d::t_86eaa13054c3cf 145-146
+app/src/main/java/moe/comico/reader/AccountSettings.kt
+  s_25aa5a699a841d::t_39f3face7f2511 31,42
+app/src/test/java/moe/comico/reader/AccountDataTest.kt
+  s_25aa5a699a841d::t_dd7089d3ae4604 1-101
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_25aa5a699a841d::t_39f3face7f2511 34,59,74-75,109-111,114,117
+  s_25aa5a699a841d::t_0e47ce408337cc 99
+  s_25aa5a699a841d::t_ed0012c4de073f 180
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_25aa5a699a841d::t_0e47ce408337cc 38-39
+  s_25aa5a699a841d::t_39f3face7f2511 84
+  s_25aa5a699a841d::t_acf8571744018d 27,30-31,76-83,85-88,90,92,94,97-98,100-106,109-110,112-113
+  s_25aa5a699a841d::t_dd7089d3ae4604 25,50,54,57,60,65,70,89,91,93,95-96,99,107-108,111,119
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_25aa5a699a841d::t_7bfc68e2342da9 17-20,45-48,64,71-73,85-92,140,142-144,149-156,206,217-218,237,240,246,249,255,273-275,277-338,340-342,344-346,349-393,407-416,422-423
+  s_25aa5a699a841d::t_86eaa13054c3cf 133,339,343,347,394-401,403-406
+  s_25aa5a699a841d::t_dd7089d3ae4604 264,276
+  s_25aa5a699a841d::t_39f3face7f2511 148
+  s_25aa5a699a841d::t_754d8008d94089 348,402,417-421
+app/build.gradle.kts
+  s_25aa5a699a841d::t_dd7089d3ae4604 40
+README.md
+  s_25aa5a699a841d::t_09294f50af3356 17,26-29,36,78-90,158-159,165,170,178-179,191
+docs/account-sync.md
+  s_25aa5a699a841d::t_18196da94958bb 1-25
+version.properties
+  s_25aa5a699a841d::t_dba2201d045ceb 1-2
+.gitignore
+  s_efd1f27633b278::t_eda1152d2ab874 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f6d29f124801c61b78113dcae8e65d0231c112d2",
+  "prompts": {},
+  "sessions": {
+    "s_25aa5a699a841d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8e-b911-7de2-b76c-68e069a535c4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_efd1f27633b278": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fac6-667c-75e1-89b5-a754ff03344d",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
