@@ -1,0 +1,42 @@
+app/src/main/java/moe/comico/reader/DiscoverScreen.kt
+  s_25aa5a699a841d::t_d4109f5dcc1285 1-16,18-45,47-48,50-67,69-75,77-83,85-110
+  s_25aa5a699a841d::t_38d850602b6fd5 17,46,68,76,84
+  s_25aa5a699a841d::t_8a96f3525e3160 49
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  s_25aa5a699a841d::t_8a96f3525e3160 36-38,49-51
+app/src/test/java/moe/comico/reader/LibrarySearchTest.kt
+  s_25aa5a699a841d::t_8a96f3525e3160 1-14
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  s_25aa5a699a841d::t_38d850602b6fd5 100
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_25aa5a699a841d::t_d4109f5dcc1285 24-28,46,48-53,72,80,87-88,140,163
+  s_25aa5a699a841d::t_8a96f3525e3160 31-32,57-58,63-64,75,78,93-101,143
+  s_25aa5a699a841d::t_38d850602b6fd5 21-23,44,47,81,111,117-120,124-126,153
+  s_25aa5a699a841d::t_0cbd3598e6a18b 45,127
+app/src/main/java/moe/comico/reader/AccountData.kt
+  s_25aa5a699a841d::t_d4109f5dcc1285 28-31
+  s_25aa5a699a841d::t_38d850602b6fd5 32-33
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_25aa5a699a841d::t_d4109f5dcc1285 17,50,67,73-74,83,91,280,291-296,298-311,371
+  s_25aa5a699a841d::t_38d850602b6fd5 28,78-79,285
+README.md
+  s_25aa5a699a841d::t_c93113eeba70d8 17,86,88-92,162-163,169,174,182-183
+version.properties
+  s_25aa5a699a841d::t_8af32d4daeab1c 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e3ca38ab9cd04ee06a8ec9da4e63afcfb1a5261d",
+  "prompts": {},
+  "sessions": {
+    "s_25aa5a699a841d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8e-b911-7de2-b76c-68e069a535c4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
