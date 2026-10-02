@@ -14,7 +14,7 @@ If no release is available yet, check the [APK build workflow](https://github.co
 To install from a computer with Android platform tools and USB debugging enabled:
 
 ```sh
-adb install -r comico-android-0.1.0.apk
+adb install -r comico-android-0.2.0.apk
 ```
 
 Replace the filename with the APK you downloaded. Future builds use the same signing key and application ID, so installing a newer version keeps your local library. If an earlier build used a different signing key, Android requires uninstalling it first, which removes its local data.
@@ -26,11 +26,46 @@ Automated builds are debug APKs signed with the public test key in `signing/debu
 - Discover manga and webtoons, search titles, and load more results.
 - Browse covers in an adaptive grid with tablet navigation.
 - View title details and chapters, with translation language selection.
-- Save titles and keep track of the last chapter opened on this device.
+- Save titles and resume at your last read page on this device.
 - Choose light, dark, or system appearance, with optional Android wallpaper colors.
-- Read supported chapters using Comico's web reader inside the app. Publisher-hosted chapters link to the original reader.
+- Read chapters as native images with long strip, single page, or double page layouts, pinch zoom, and chapter navigation. Publisher-only chapters link to the original reader.
 
-The catalog currently uses Comico's `safe` content rating. Account login, cloud sync, offline downloads, native image paging, and native page-level progress tracking are not implemented.
+The catalog defaults to Comico's `safe` content rating; use the content filter to change it. Account login, cloud sync, and offline downloads are not implemented.
+
+## Search filters
+
+Tap **Filters** in Discover or Search to choose:
+
+- Sort by relevance, recently updated, most followed, or title.
+- Content rating threshold, from safe only through all ratings.
+- Type: manga, manhwa, manhua, or webtoons.
+- Demographic: shounen, shoujo, seinen, or josei.
+- Release status: ongoing, completed, hiatus, or cancelled.
+- Up to 20 Comick tags from Comico's live tag list.
+
+Search the tag list by name, select tags, then tap **Apply filters**. **Reset** restores the defaults in the dialog; tap Apply to use them. Filters persist on this device and reset pagination when changed. You can search with a title, tags, or both. Tag and title searches use Comico's Comick-backed search, matching its website.
+
+## Reader settings
+
+Open **Settings → Global reader defaults** to choose settings for all manga. Open a title's **Reader settings for this manga**, or tap the reader's settings icon, to customize that manga. Each field can use its global value or an explicit override. **Use all global defaults** removes all overrides for that manga.
+
+| Setting | Choices |
+| --- | --- |
+| Reading mode | Auto by format, long strip, single page, double page |
+| Page width | Narrow, comfort, wide, full |
+| Proxy method | Auto, Method 1, Method 2, Method 3 |
+| Source | Auto or a source reported by Comico for that manga/chapter |
+| Page direction | Left to right, right to left |
+
+Auto mode chooses long strip for webtoons, manhwa, and manhua, and single pages for manga. Auto proxy tries direct source images first, then Method 1 and Method 2. The manual methods match Comico's `all`, `api`, and `direct` values respectively.
+
+Source choices come from the live API. They can include MangaDex, ComickLive, Atsu, and other sources, depending on the manga and chapter. Global source preferences are populated as you open titles. An unavailable preferred source falls back to Auto, with a notice in the reader. The bottom reader controls show the source and method actually used.
+
+Swipe between single pages or double-page spreads. Scroll in long-strip mode. Pinch or double-tap to zoom, tap a page to hide controls, and use the page slider to jump. Reading position, global settings, and individual manga overrides persist on this device.
+
+The native reader resolves the same public access-token and read-session endpoints as Comico's website. Method 3 includes direct resolvers for MangaDex, ComickLive, Atsu, Manganato, MangaBall, and XComic. Other providers use server-resolved images through Method 1 or Method 2. Source availability and server failures can affect reading. Protected scrambled image formats are not supported; the reader prompts you to choose another source instead of displaying scrambled pages.
+
+The app icon uses the supplied comico.moe logo.
 
 ## Build the app
 
@@ -98,19 +133,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 The app and the GitHub workflow both read `version.properties`:
 
 ```properties
-VERSION_NAME=0.1.0
-VERSION_CODE=1
+VERSION_NAME=0.2.0
+VERSION_CODE=2
 ```
 
 To publish the next version:
 
 1. Finish the code changes you want included in the APK.
-2. Update **both** values. For example, use `VERSION_NAME=0.2.0` and `VERSION_CODE=2`. The version name must use `major.minor.patch`, and both values must increase.
+2. Update **both** values. For example, use `VERSION_NAME=0.3.0` and `VERSION_CODE=3`. The version name must use `major.minor.patch`, and both values must increase.
 3. Commit the version change and push it to `main`:
 
    ```sh
    git add version.properties
-   git commit -m "Release version 0.2.0"
+   git commit -m "Release version 0.3.0"
    git push origin main
    ```
 
@@ -118,8 +153,8 @@ The [workflow](.github/workflows/build-apk.yml) then:
 
 - Validates the version change.
 - Runs unit tests and Android lint, then builds the debug APK.
-- Uploads `comico-android-0.2.0.apk` and its SHA-256 checksum as workflow artifacts.
-- Creates the `v0.2.0` tag and GitHub release at the exact commit that triggered the build.
+- Uploads `comico-android-0.3.0.apk` and its SHA-256 checksum as workflow artifacts.
+- Creates the `v0.3.0` tag and GitHub release at the exact commit that triggered the build.
 
 The initial push also publishes the starting version. Other source changes do not trigger this release workflow until you update the version file. Editing comments or whitespace without changing the version values skips the build. Existing releases remain unchanged.
 
@@ -131,4 +166,4 @@ The app reads Comico's catalog, search, title details, and chapter endpoints. Se
 
 Public API requests include a descriptive User-Agent. Search waits 400ms after typing and cancels superseded requests. The app shows loading, empty, retry, and network error states.
 
-Bookmarks and the last opened chapter are stored in private on-device preferences. The embedded website manages reader access tokens, image protection, and its own page position. The app does not decode protected images.
+Bookmarks, last opened chapters, page positions, and reader settings are stored in private on-device preferences. The Kotlin reader obtains normal access tokens and session image URLs from Comico; no HTML reader or WebView is embedded. Provider metadata may be parsed from its source page when that provider exposes image information there.
