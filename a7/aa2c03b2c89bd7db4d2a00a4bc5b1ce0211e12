@@ -1,0 +1,80 @@
+.github/workflows/build-apk.yml
+  s_25aa5a699a841d::t_557a698ce79eac 1-17,19-78,80-117
+  s_25aa5a699a841d::t_7d496b2807597c 79
+  s_25aa5a699a841d::t_139b1d1ad8752e 18
+docs/openapi.json
+  s_25aa5a699a841d::t_31fe557b497881 1
+app/src/test/java/moe/comico/reader/ApiModelsTest.kt
+  s_25aa5a699a841d::t_ad2b6ce74dedd2 1-24
+build.gradle.kts
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-5
+app/src/main/res/values/styles.xml
+  s_25aa5a699a841d::t_a0e05d03574bd1 1
+app/src/main/java/moe/comico/reader/ReaderScreen.kt
+  s_25aa5a699a841d::t_69a5a46d5ffbc9 14,40
+  s_25aa5a699a841d::t_a436679571c80d 1-13,15-39,41-76
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_25aa5a699a841d::t_69a5a46d5ffbc9 17,204
+  s_25aa5a699a841d::t_c41b2da94dec0c 1-16,18-203,205-228,230-235
+  s_25aa5a699a841d::t_557a698ce79eac 229
+app/src/main/AndroidManifest.xml
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-2,4-8
+  s_25aa5a699a841d::t_f77d023479494a 3
+scripts/read_version.py
+  s_25aa5a699a841d::t_557a698ce79eac 1-55
+gradlew
+  s_25aa5a699a841d::t_ad2b6ce74dedd2 3-4
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-2
+gradlew.bat
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-2
+version.properties
+  s_25aa5a699a841d::t_f3b683eb14a3c4 1-2
+.gitignore
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-6
+  s_25aa5a699a841d::t_7d496b2807597c 7-8
+gradle.properties
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-3
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_25aa5a699a841d::t_bdfa2988d3d812 40-44
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-39,45-99
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-33,35-45
+  s_25aa5a699a841d::t_e1b8ca04cad9cd 34
+gradle/wrapper/gradle-wrapper.properties
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-5
+settings.gradle.kts
+  s_25aa5a699a841d::t_a0e05d03574bd1 1-4
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  s_25aa5a699a841d::t_c41b2da94dec0c 1-36
+README.md
+  s_25aa5a699a841d::t_3dfbf38c9181fa 3,5,7-10,12,14,16-63,65-91,93-102,105,107-109,111-115,117,119-122,124,126,128,130,132,134
+  s_25aa5a699a841d::t_56b753dab63bc1 133
+  s_25aa5a699a841d::t_308a8c87ccfbbb 1-2,4,6,11,13,15,64,92,103-104,106,110,116,118,123,125,127,129,131
+app/build.gradle.kts
+  s_25aa5a699a841d::t_f3b683eb14a3c4 5-11,15-23
+  s_25aa5a699a841d::t_a0e05d03574bd1 3,12-14,25-41
+  s_25aa5a699a841d::t_557a698ce79eac 24
+  s_25aa5a699a841d::t_7a3b6b9c9083bc 1-2,4
+scripts/test_read_version.py
+  s_25aa5a699a841d::t_ad64fc948da4ac 1-47
+app/src/main/res/drawable/ic_comico.xml
+  s_25aa5a699a841d::t_762653b3291f20 1-5
+app/src/main/res/xml/data_extraction_rules.xml
+  s_25aa5a699a841d::t_a36f706d344e70 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a7aa2c03b2c89bd7db4d2a00a4bc5b1ce0211e12",
+  "prompts": {},
+  "sessions": {
+    "s_25aa5a699a841d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8e-b911-7de2-b76c-68e069a535c4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
