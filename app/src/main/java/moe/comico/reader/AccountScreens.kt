@@ -97,6 +97,7 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel) {
             }
             "Reading" -> item { Text("Global reader defaults",style = MaterialTheme.typography.titleLarge);Spacer(Modifier.height(16.dp));GlobalReaderOptions(state,model);Spacer(Modifier.height(16.dp));Text("Individual manga can override each global setting.") }
             "Preferences" -> {
+                item { FilledTonalButton(onClick = { model.tab("Leaderboard") }) { Icon(Icons.Rounded.Leaderboard,null);Spacer(Modifier.width(8.dp));Text("Leaderboard") } }
                 item { Text("Appearance",style = MaterialTheme.typography.titleLarge);Column { listOf("Website","System","Light","Dark").forEach { theme -> FilterChip(selected = state.theme == theme,onClick = { model.theme(theme) },label = { Text(theme) }) } } }
                 item { ListItem(headlineContent = { Text("Wallpaper colors") },supportingContent = { Text("Use your Android palette on Android 12 and later") },trailingContent = { Switch(state.dynamicColor,model::dynamic) }) }
             }

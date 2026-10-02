@@ -33,8 +33,9 @@ fun ComicoTheme(theme: String = "Website", dynamic: Boolean = false, content: @C
     } else if(dark) darkColorScheme(
         primary = Color(0xFFE0573C), onPrimary = Color(0xFF17070A),
         primaryContainer = Color(0xFF53251D), onPrimaryContainer = Color(0xFFECedef),
-        secondary = Color(0xFFE0573C), secondaryContainer = Color(0xFF35353C),
-        onSecondaryContainer = Color(0xFFECedef), tertiary = Color(0xFFE0573C),
+        surfaceTint = Color(0xFFE0573C),
+        secondary = Color(0xFFE0573C), onSecondary = Color(0xFF17070A), secondaryContainer = Color(0xFF35353C),
+        onSecondaryContainer = Color(0xFFECedef), tertiary = Color(0xFFE0573C), onTertiary = Color(0xFF17070A), tertiaryContainer = Color(0xFF53251D), onTertiaryContainer = Color(0xFFECEDEF),
         background = Color(0xFF0B0B0D), onBackground = Color(0xFFECedef),
         surface = Color(0xFF131316), onSurface = Color(0xFFECedef),
         surfaceVariant = Color(0xFF1B1B1F), onSurfaceVariant = Color(0xFF8C8C96),
@@ -45,8 +46,9 @@ fun ComicoTheme(theme: String = "Website", dynamic: Boolean = false, content: @C
     ) else lightColorScheme(
         primary = Color(0xFFC0442A), onPrimary = Color.White,
         primaryContainer = Color(0xFFFFDAD1), onPrimaryContainer = Color(0xFF16161A),
-        secondary = Color(0xFFC0442A), secondaryContainer = Color(0xFFE5E3DD),
-        onSecondaryContainer = Color(0xFF16161A), tertiary = Color(0xFFC0442A),
+        surfaceTint = Color(0xFFC0442A),
+        secondary = Color(0xFFC0442A), onSecondary = Color.White, secondaryContainer = Color(0xFFE5E3DD),
+        onSecondaryContainer = Color(0xFF16161A), tertiary = Color(0xFFC0442A), onTertiary = Color.White, tertiaryContainer = Color(0xFFFFDAD1), onTertiaryContainer = Color(0xFF16161A),
         background = Color(0xFFFBFBF9), onBackground = Color(0xFF16161A),
         surface = Color.White, onSurface = Color(0xFF16161A),
         surfaceVariant = Color(0xFFE5E3DD), onSurfaceVariant = Color(0xFF6A6A73),

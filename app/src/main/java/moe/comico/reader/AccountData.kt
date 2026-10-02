@@ -25,3 +25,9 @@ fun accountStorageKey(key: String, owner: String?) = owner?.let { "$key:account:
 
 fun accountHistorySnapshot(remote: List<HistoryEntry>, uploaded: List<HistoryEntry>, queued: List<HistoryEntry>, local: List<HistoryEntry>) =
     mergeHistory(remote,uploaded + queued + local.filter { it.pageCount == 0 })
+
+data class DiscoverSection(val items: List<Manga> = emptyList(), val loading: Boolean = false, val error: String? = null)
+fun visibleDiscoverFeeds(signedIn: Boolean): List<DiscoverFeed> =
+    (if(signedIn) listOf(DiscoverFeed.UPDATES,DiscoverFeed.HISTORY) else emptyList()) + DiscoverFeed.entries.filterNot { it.accountOnly }
+
+fun filterLibrary(library: List<Manga>, query: String): List<Manga> = library.filter { query.isBlank() || it.title.contains(query.trim(),ignoreCase = true) }

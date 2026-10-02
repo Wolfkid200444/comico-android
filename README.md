@@ -14,7 +14,7 @@ If no release is available yet, check the [APK build workflow](https://github.co
 To install from a computer with Android platform tools and USB debugging enabled:
 
 ```sh
-adb install -r comico-android-0.4.0.apk
+adb install -r comico-android-0.5.0.apk
 ```
 
 Replace the filename with the APK you downloaded. Future builds use the same signing key and application ID, so installing a newer version keeps your local library. If an earlier build used a different signing key, Android requires uninstalling it first, which removes its local data.
@@ -83,9 +83,13 @@ Each account has its own cache and pending changes. Signing out restores the gue
 
 **Settings** has Profile, Comments, Reading, Preferences, and Data tabs. While signed out, only Reading and Preferences are enabled; sign-in and registration remain available above the tabs. Profile lets you edit your name, username, and bio. Comments displays your recent website comments. Data includes manual sync, guest import, a JSON export, and history clearing.
 
-**History** lists chapters and saved page positions; tap an entry to resume. **Leaderboard** shows the website’s top 50 accounts by experience and links to their public profiles.
+Bottom navigation is **Discover → Search → Library → History → Settings**. Search browses the full comico.moe catalog. The search button in Library filters only saved titles on this device, including titles synchronized from your account.
 
-**Discover** has Recently updated, Recent popular, New releases, and Most followed feeds from the website’s title statistics endpoint. Signing in adds New chapters from followed comics and Reading history. Search remains accessible through the top search icon.
+**History** lists chapters and saved page positions; tap an entry to resume. **Settings → Preferences → Leaderboard** shows the website’s top 50 accounts by experience and links to their public profiles.
+
+**Discover** displays Recently updated, Recent popular, New releases, and Most followed as separate horizontal Material 3 carousels on one page. Each feed loads independently and has its own retry state. Signing in adds New chapters from followed comics and Reading history carousels above the public feeds. Tap a history cover to resume that chapter. Carousel and page scroll positions are retained when switching screens.
+
+The interface uses native Material 3 carousels, a search bar, tonal card surfaces, selected navigation indicators, and a scrolling app bar. The default website colors and supplied logo remain in use.
 
 See [account sync contracts](docs/account-sync.md) for endpoints and implementation details.
 
@@ -155,19 +159,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 The app and the GitHub workflow both read `version.properties`:
 
 ```properties
-VERSION_NAME=0.4.0
-VERSION_CODE=4
+VERSION_NAME=0.5.0
+VERSION_CODE=5
 ```
 
 To publish the next version:
 
 1. Finish the code changes you want included in the APK.
-2. Update **both** values. For example, use `VERSION_NAME=0.5.0` and `VERSION_CODE=5`. The version name must use `major.minor.patch`, and both values must increase.
+2. Update **both** values. For example, use `VERSION_NAME=0.6.0` and `VERSION_CODE=6`. The version name must use `major.minor.patch`, and both values must increase.
 3. Commit the version change and push it to `main`:
 
    ```sh
    git add version.properties
-   git commit -m "Release version 0.5.0"
+   git commit -m "Release version 0.6.0"
    git push origin main
    ```
 
@@ -175,8 +179,8 @@ The [workflow](.github/workflows/build-apk.yml) then:
 
 - Validates the version change.
 - Runs unit tests and Android lint, then builds the debug APK.
-- Uploads `comico-android-0.5.0.apk` and its SHA-256 checksum as workflow artifacts.
-- Creates the `v0.5.0` tag and GitHub release at the exact commit that triggered the build.
+- Uploads `comico-android-0.6.0.apk` and its SHA-256 checksum as workflow artifacts.
+- Creates the `v0.6.0` tag and GitHub release at the exact commit that triggered the build.
 
 The initial push also publishes the starting version. Other source changes do not trigger this release workflow until you update the version file. Editing comments or whitespace without changing the version values skips the build. Existing releases remain unchanged.
 

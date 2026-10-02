@@ -14,7 +14,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class AppState(
-    val discoverFeed: DiscoverFeed = DiscoverFeed.UPDATED, val history: List<HistoryEntry> = emptyList(),
+    val discoverSections: Map<DiscoverFeed,DiscoverSection> = emptyMap(), val history: List<HistoryEntry> = emptyList(),
     val syncLoading: Boolean = false, val syncError: String? = null, val lastSync: String? = null,
     val leaderboard: List<LeaderboardEntry> = emptyList(), val leaderboardLoading: Boolean = false, val leaderboardError: String? = null,
     val comments: List<AccountComment> = emptyList(), val profileBio: String = "", val accountDataLoading: Boolean = false, val accountDataError: String? = null,
@@ -25,6 +25,7 @@ data class AppState(
     val firstChapter: Chapter? = null, val startError: String? = null,
     val chapterOffset: Int = 0, val chapterLoading: Boolean = false, val chapterError: String? = null,
     val language: String = "en", val reader: Chapter? = null,
+    val libraryQuery: String = "", val librarySearchVisible: Boolean = false,
     val library: List<Manga> = emptyList(), val progress: Map<String, Chapter> = emptyMap(),
     val theme: String = "Website", val dynamicColor: Boolean = false,
     val readerPreferences: ReaderPreferences = ReaderPreferences(),
@@ -46,6 +47,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private var progressSyncJob: Job? = null
     private var accountDataJob: Job? = null
     private var activeOwner: String? = null
+    private val discoverJobs = mutableMapOf<DiscoverFeed,Job>()
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
     private var chaptersJob: Job? = null
@@ -62,19 +64,23 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         val searchFilters = runCatching { JSONObject(prefs.getString("searchFilters", "{}")!!).searchFilters() }.getOrDefault(SearchFilters())
         mutable.update { it.copy(searchFilters = searchFilters, format = searchFilters.type?.apiValue?.replaceFirstChar { c -> c.uppercase() } ?: "All") }
         loadOwner(null)
-        loadCatalog()
+        loadDiscover()
         refreshAccount()
     }
     fun tab(value: String) {
         val reset = value == "Discover" && mutable.value.query.isNotEmpty()
         mutable.update { it.copy(tab = value, query = if(reset) "" else it.query) }
-        if(value == "Discover" || value == "Search") loadCatalog()
+        if(value == "Discover") loadDiscover()
+        if(value == "Search") loadCatalog()
         if(value == "Library" || value == "History") syncAccount()
         if(value == "Leaderboard") loadLeaderboard()
     }
+    fun librarySearch(value: String) { mutable.update { it.copy(libraryQuery = value) } }
+    fun toggleLibrarySearch() { mutable.update { it.copy(librarySearchVisible = !it.librarySearchVisible,libraryQuery = if(it.librarySearchVisible) "" else it.libraryQuery) } }
     fun search(value: String) { mutable.update { it.copy(query = value) }; loadCatalog(debounce = true) }
     fun format(value: String) { applySearchFilters(mutable.value.searchFilters.copy(type = MangaType.entries.find { it.apiValue.equals(value,ignoreCase = true) })) }
     fun loadCatalog(more: Boolean = false, debounce: Boolean = false) {
+        if(mutable.value.tab == "Discover") { loadDiscover(refresh = true);return }
         catalogJob?.cancel()
         catalogJob = viewModelScope.launch {
             val before = mutable.value
@@ -82,14 +88,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             mutable.update { it.copy(loading = true, error = null, catalog = if(more) it.catalog else emptyList()) }
             try {
                 if(debounce) delay(400)
-                val result = if(before.tab == "Discover") {
-                    val items = when(before.discoverFeed) {
-                        DiscoverFeed.UPDATES -> api.followedUpdates()
-                        DiscoverFeed.HISTORY -> mutable.value.history.map { it.manga }.distinctBy { it.id }
-                        else -> api.discover(before.discoverFeed,before.searchFilters)
-                    }
-                    PageResult(items,items.size)
-                } else api.catalog(before.query, offset, before.searchFilters)
+                val result = api.catalog(before.query, offset, before.searchFilters)
                 mutable.update { it.copy(catalog = (if(more) it.catalog else emptyList()).plus(result.items).distinctBy { m -> m.id }, total = result.total, offset = offset + 30, loading = false) }
             } catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(loading = false, error = e.message ?: "Could not connect to Comico.") } }
         }
@@ -278,22 +277,38 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private fun persistLibrary() { prefs.edit().putString(ownerKey("library"),JSONArray(mutable.value.library.map { it.toJson() }).toString()).apply() }
     private fun persistHistory() { prefs.edit().putString(ownerKey("history"),JSONArray(mutable.value.history.map { it.toJson() }).toString()).apply() }
     private fun loadOwner(owner: String?) {
+        discoverJobs.filterKeys { it.accountOnly }.values.forEach { it.cancel() }
         activeOwner = owner
         val library = runCatching { JSONArray(prefs.getString(ownerKey("library"),"[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
         val history = runCatching { JSONArray(prefs.getString(ownerKey("history"),"[]")).objects().map { it.historyEntry() } }.getOrDefault(emptyList())
         val progress = runCatching { JSONObject(prefs.getString(ownerKey("progress"),"{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
-        mutable.update { it.copy(library = library,history = history,progress = progress,syncError = null,lastSync = null,comments = emptyList(),profileBio = "",accountDataError = null,discoverFeed = if(owner == null && it.discoverFeed.accountOnly) DiscoverFeed.UPDATED else it.discoverFeed) }
+        mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress,syncError = null,lastSync = null,comments = emptyList(),profileBio = "",accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
     }
     private fun activateAccount(user: AccountUser?) {
         progressSyncJob?.cancel();accountDataJob?.cancel()
         if(activeOwner != user?.id) loadOwner(user?.id)
         if(user != null) { syncAccount();loadAccountData() }
-        if(mutable.value.tab == "Discover") loadCatalog()
+        if(mutable.value.tab == "Discover") loadDiscover()
     }
-    fun discoverFeed(feed: DiscoverFeed) {
-        if(feed.accountOnly && mutable.value.account.user == null) return
-        mutable.update { it.copy(discoverFeed = feed) };loadCatalog()
-        if(feed.accountOnly) syncAccount()
+    fun loadDiscover(refresh: Boolean = false) {
+        visibleDiscoverFeeds(mutable.value.account.user != null).filterNot { it == DiscoverFeed.HISTORY }.forEach { feed ->
+            if(refresh || mutable.value.discoverSections[feed] == null) loadDiscoverFeed(feed)
+        }
+    }
+    fun loadDiscoverFeed(feed: DiscoverFeed) {
+        val userId = mutable.value.account.user?.id
+        if(feed == DiscoverFeed.HISTORY || (feed.accountOnly && userId == null) || discoverJobs[feed]?.isActive == true) return
+        val filters = mutable.value.searchFilters
+        mutable.update { it.copy(discoverSections = it.discoverSections + (feed to (it.discoverSections[feed] ?: DiscoverSection()).copy(loading = true,error = null))) }
+        discoverJobs[feed] = viewModelScope.launch {
+            try {
+                val items = if(feed == DiscoverFeed.UPDATES) api.followedUpdates() else api.discover(feed,filters)
+                mutable.update { if(feed.accountOnly && it.account.user?.id != userId) it else it.copy(discoverSections = it.discoverSections + (feed to DiscoverSection(items = items))) }
+            } catch(e: CancellationException) { throw e }
+            catch(e: Exception) {
+                mutable.update { if(feed.accountOnly && it.account.user?.id != userId) it else it.copy(discoverSections = it.discoverSections + (feed to (it.discoverSections[feed] ?: DiscoverSection()).copy(loading = false,error = e.message ?: "Couldn't load this feed."))) }
+            }
+        }
     }
     private fun recordHistory(chapter: Chapter, page: Int, pageCount: Int) {
         val manga = mutable.value.selected ?: return
@@ -353,7 +368,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                     prefs.edit().putString(ownerKey("progress"),progress.toString()).apply()
                 } catch(e: CancellationException) { throw e } catch(e: Exception) { failures += "History: ${e.message}" }
                 mutable.update { it.copy(lastSync = if(failures.isEmpty()) java.time.Instant.now().toString() else it.lastSync,syncError = failures.joinToString("\n").ifEmpty { null }) }
-                if(mutable.value.tab == "Discover" && mutable.value.discoverFeed.accountOnly) loadCatalog()
+                if(mutable.value.tab == "Discover") loadDiscoverFeed(DiscoverFeed.UPDATES)
             } finally {
                 mutable.update { it.copy(syncLoading = false) }
                 if(failures.isEmpty() && (pending("bookmarks").length() > 0 || pending("progress").length() > 0)) syncAccount()
