@@ -25,12 +25,35 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun ComicoTheme(theme: String = "System", dynamic: Boolean = false, content: @Composable () -> Unit) {
-    val dark = when(theme) { "Dark" -> true; "Light" -> false; else -> isSystemInDarkTheme() }
+fun ComicoTheme(theme: String = "Website", dynamic: Boolean = false, content: @Composable () -> Unit) {
+    val dark = when(theme) { "Website", "Dark" -> true; "Light" -> false; else -> isSystemInDarkTheme() }
     val context = LocalContext.current
     val scheme = if(dynamic && android.os.Build.VERSION.SDK_INT >= 31) {
         if(dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else if(dark) darkColorScheme(primary = Color(0xFFD3BCFF), primaryContainer = Color(0xFF503773), secondaryContainer = Color(0xFF393344), background = Color(0xFF141218), surface = Color(0xFF141218))
-    else lightColorScheme(primary = Color(0xFF70518D), onPrimary = Color.White, primaryContainer = Color(0xFFEFDCFF), onPrimaryContainer = Color(0xFF29123E), secondaryContainer = Color(0xFFEDE5F3), background = Color(0xFFFFF8FC), surface = Color(0xFFFFF8FC), tertiaryContainer = Color(0xFFFFDBCA))
+    } else if(dark) darkColorScheme(
+        primary = Color(0xFFE0573C), onPrimary = Color(0xFF17070A),
+        primaryContainer = Color(0xFF53251D), onPrimaryContainer = Color(0xFFECedef),
+        secondary = Color(0xFFE0573C), secondaryContainer = Color(0xFF35353C),
+        onSecondaryContainer = Color(0xFFECedef), tertiary = Color(0xFFE0573C),
+        background = Color(0xFF0B0B0D), onBackground = Color(0xFFECedef),
+        surface = Color(0xFF131316), onSurface = Color(0xFFECedef),
+        surfaceVariant = Color(0xFF1B1B1F), onSurfaceVariant = Color(0xFF8C8C96),
+        surfaceContainerLowest = Color(0xFF0B0B0D), surfaceContainerLow = Color(0xFF131316),
+        surfaceContainer = Color(0xFF1B1B1F), surfaceContainerHigh = Color(0xFF26262B),
+        surfaceContainerHighest = Color(0xFF35353C), outline = Color(0xFF35353C),
+        outlineVariant = Color(0xFF26262B)
+    ) else lightColorScheme(
+        primary = Color(0xFFC0442A), onPrimary = Color.White,
+        primaryContainer = Color(0xFFFFDAD1), onPrimaryContainer = Color(0xFF16161A),
+        secondary = Color(0xFFC0442A), secondaryContainer = Color(0xFFE5E3DD),
+        onSecondaryContainer = Color(0xFF16161A), tertiary = Color(0xFFC0442A),
+        background = Color(0xFFFBFBF9), onBackground = Color(0xFF16161A),
+        surface = Color.White, onSurface = Color(0xFF16161A),
+        surfaceVariant = Color(0xFFE5E3DD), onSurfaceVariant = Color(0xFF6A6A73),
+        surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFFBFBF9),
+        surfaceContainer = Color.White, surfaceContainerHigh = Color(0xFFF3F2EE),
+        surfaceContainerHighest = Color(0xFFE5E3DD), outline = Color(0xFFD2CFC7),
+        outlineVariant = Color(0xFFE5E3DD)
+    )
     MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
 }

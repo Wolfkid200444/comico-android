@@ -55,8 +55,11 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                     if(state.selected != null) TopAppBar(title = { Text("Title details", style = MaterialTheme.typography.titleMedium) }, navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } })
                     else TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Image(painterResource(R.drawable.comico_logo), "Comico logo", Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)))
-                        Text("comico", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text("comico.moe", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                     } }, actions = { if(state.tab == "Discover") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") } })
+                },
+                floatingActionButton = {
+                    if(state.selected != null && state.firstChapter != null) ExtendedFloatingActionButton(onClick = model::startReading,icon = { Icon(Icons.Rounded.PlayArrow,null) },text = { Text("Start reading") })
                 },
                 bottomBar = {
                     if(!wide && state.selected == null) NavigationBar {
@@ -84,8 +87,8 @@ private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderView
     LazyVerticalGrid(columns = GridCells.Adaptive(145.dp), contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if(library) "Your reading nook" else if(state.tab == "Search") "Find your next story" else "One more chapter.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                Text(if(library) "Saved stories, ready when you are." else "Manga, manhwa & a little escape.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if(library) "Your reading nook" else if(state.tab == "Search") "Find your next story" else "Discover", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text(if(library) "Saved stories, ready when you are." else "A quiet place to discover, track and read manga, manhwa and webtoons from supported sources and scanlation groups.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if(!library && state.tab == "Search") item(span = { GridItemSpan(maxLineSpan) }) {
@@ -169,7 +172,7 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
     val progress = state.progress[manga.id]
     var readerSettings by remember { mutableStateOf(false) }
     if(readerSettings) ReaderSettingsDialog(state, model) { readerSettings = false }
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(contentPadding = PaddingValues(start = 20.dp,end = 20.dp,top = 20.dp,bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 Cover(manga, Modifier.width(120.dp).aspectRatio(0.7f).clip(RoundedCornerShape(18.dp)))
@@ -217,6 +220,7 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
             }
         }
         if(state.chapterLoading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        if(state.startError != null) item { Text(state.startError,color = MaterialTheme.colorScheme.error) }
         if(state.chapterError != null) item { MessageCard(Icons.Rounded.CloudOff, "Couldn't load chapters", state.chapterError) { model.loadChapters() } }
         if(!state.chapterLoading && state.chapterError == null && state.chapters.isEmpty()) item { MessageCard(Icons.AutoMirrored.Rounded.MenuBook, "No chapters in this language", "Choose another language to check available translations.") }
         if(!state.chapterLoading && state.chapterOffset < state.chapterTotal) item { OutlinedButton(onClick = { model.loadChapters(true) }, Modifier.fillMaxWidth()) { Text("Load more chapters") } }
@@ -226,11 +230,13 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
 @Composable
 private fun SettingsScreen(state: AppState, model: ReaderViewModel) {
     LazyColumn(contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        item { Text("Make yourself at home", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
+        item { Text("comico.moe", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
+        item { AccountSettings(state,model) }
+        item { HorizontalDivider() }
         item {
             Text("Appearance", style = MaterialTheme.typography.titleLarge)
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("System", "Light", "Dark").forEach { FilterChip(selected = state.theme == it, onClick = { model.theme(it) }, label = { Text(it) }) }
+                listOf("Website", "System", "Light", "Dark").forEach { FilterChip(selected = state.theme == it, onClick = { model.theme(it) }, label = { Text(it) }) }
             }
         }
         item { ListItem(headlineContent = { Text("Wallpaper colors") }, supportingContent = { Text("Use your Android color palette on Android 12 and later") }, trailingContent = { Switch(checked = state.dynamicColor, onCheckedChange = model::dynamic) }) }
@@ -238,7 +244,7 @@ private fun SettingsScreen(state: AppState, model: ReaderViewModel) {
         item { Text("Your library", style = MaterialTheme.typography.titleLarge); Text("Saved titles, reader settings, and your page position are stored on this device. Account sync and offline chapter downloads aren't included yet.", Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Text("Global reader defaults", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.height(16.dp)); GlobalReaderOptions(state,model) }
         item { Text("Reading", style = MaterialTheme.typography.titleLarge); Text("Chapters load as native images. Individual manga can override each global setting. Publisher-only chapters open in your browser.", Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { Text("Comico for Android", style = MaterialTheme.typography.titleMedium); Text("Version ${BuildConfig.VERSION_NAME} · Independent client for comico.moe", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Text("comico.moe for Android", style = MaterialTheme.typography.titleMedium); Text("Version ${BuildConfig.VERSION_NAME} · Independent client for comico.moe", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 

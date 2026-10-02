@@ -28,9 +28,9 @@ class ReaderPreferencesTest {
         assertEquals(ReadingMode.DOUBLE,settings.copy(mode = ReadingMode.DOUBLE).modeFor("webtoon"))
     }
     @Test fun preferencesAndOverridesSurviveSerialization() {
-        val global = ReaderPreferences(ReadingMode.DOUBLE,PageWidth.COMFORT,ProxyMethod.METHOD_3,"comicklive",ReadingDirection.RTL)
+        val global = ReaderPreferences(ReadingMode.DOUBLE,PageWidth.COMFORT,ProxyMethod.METHOD_3,"comicklive",ReadingDirection.RTL,ReaderNavigation.VERTICAL)
         assertEquals(global,JSONObject(global.toJson().toString()).readerPreferences())
-        val override = ReaderOverride(proxy = ProxyMethod.METHOD_1,sourceOverride = true)
+        val override = ReaderOverride(proxy = ProxyMethod.METHOD_1,sourceOverride = true,navigation = ReaderNavigation.VERTICAL)
         assertEquals(override,JSONObject(override.toJson().toString()).readerOverride())
     }
     @Test fun oldOrUnknownPreferencesHaveSafeDefaults() {
@@ -41,6 +41,14 @@ class ReaderPreferencesTest {
         assertEquals(listOf(4),spreadPages(5,4,true,ReadingDirection.LTR))
         assertEquals(listOf(1,0),spreadPages(5,0,true,ReadingDirection.RTL))
         assertEquals(listOf(2),spreadPages(5,2,false,ReadingDirection.RTL))
+    }
+    @Test fun scrollingAndSpreadSizeRespectLayout() {
+        assertTrue(usesVerticalScrolling(ReadingMode.STRIP,ReaderNavigation.HORIZONTAL))
+        assertTrue(usesVerticalScrolling(ReadingMode.DOUBLE,ReaderNavigation.VERTICAL))
+        assertFalse(usesVerticalScrolling(ReadingMode.SINGLE,ReaderNavigation.HORIZONTAL))
+        assertEquals(2,readingGroupSize(ReadingMode.DOUBLE))
+        assertEquals(1,readingGroupSize(ReadingMode.STRIP))
+        assertEquals(ReaderNavigation.VERTICAL,ReaderOverride().resolve(ReaderPreferences(navigation = ReaderNavigation.VERTICAL)).navigation)
     }
     @Test fun proxyMethodsMatchComicoIdentifiers() {
         assertEquals("all",ProxyMethod.METHOD_1.apiValue)

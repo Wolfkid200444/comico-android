@@ -22,14 +22,19 @@ fun JSONObject.chapter() = Chapter(getString("id"), optString("number", "?"), op
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 fun absoluteUrl(value: String): String = if (value.startsWith("/")) BASE_URL + value else value
 
-class ComicoApi {
-    private val client = OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).build()
+class ComicoApi(private val accountCookies: AccountCookieJar? = null) {
+    private val client = OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).apply { accountCookies?.let { cookieJar(it) } }.build()
     suspend fun requestText(url: String, body: JSONObject? = null): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url)
             .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
+            .apply { if(url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/auth/")) header("Origin",BASE_URL) }
             .apply { if(body != null) post(body.toString().toRequestBody("application/json".toMediaType())) }
             .build()
         client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful && url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/auth/")) {
+                val error = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+                throw IOException(accountErrorMessage(error?.optString("code").orEmpty(),error?.optString("message")?.takeIf { it.isNotBlank() } ?: "Account request failed with HTTP ${response.code}. Try again."))
+            }
             if (!response.isSuccessful) throw IOException(when(response.code) {
                 429 -> "Too many requests. Wait a minute and try again."
                 404 -> "This title or chapter is no longer available."
@@ -66,4 +71,24 @@ class ComicoApi {
         val data = get("/api/manga/$id/chapters", mapOf("language" to language, "limit" to "50", "offset" to offset.toString(), "order" to "desc", "sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
         return PageResult(data.optJSONArray("items").objects().map { it.chapter() }, data.optInt("total"))
     }
+    suspend fun firstChapter(id: String, language: String, source: String?): Chapter? {
+        val data = get("/api/manga/$id/chapters",mapOf("language" to language,"limit" to "1","offset" to "0","order" to "asc","sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
+        return data.optJSONArray("items").objects().firstOrNull()?.chapter()
+    }
+    suspend fun account(): AccountUser? {
+        val text = requestText("$BASE_URL/api/auth/get-session?disableCookieCache=true")
+        if(text.trim() == "null") return null
+        return JSONObject(text).optJSONObject("user")?.accountUser()
+    }
+    suspend fun signIn(identifier: String, password: String): AccountUser {
+        val (path,body) = signInPayload(identifier,password)
+        post(path,emptyMap(),body)
+        return account() ?: throw IOException("Sign-in completed, but the session could not be loaded. Try signing in again.")
+    }
+    suspend fun register(username: String, name: String, email: String, password: String) {
+        require(password.length >= 8) { "Use a password with at least 8 characters." }
+        post("/api/auth/sign-up/email",emptyMap(),JSONObject().put("username",username.trim()).put("name",name.trim().ifBlank { username.trim() }).put("email",email.trim()).put("password",password))
+    }
+    suspend fun signOut() { post("/api/auth/sign-out",emptyMap(),JSONObject()) }
+
 }

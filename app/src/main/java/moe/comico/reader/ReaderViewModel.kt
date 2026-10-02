@@ -18,20 +18,22 @@ data class AppState(
     val catalog: List<Manga> = emptyList(), val total: Int = 0, val offset: Int = 0,
     val loading: Boolean = false, val error: String? = null,
     val selected: Manga? = null, val chapters: List<Chapter> = emptyList(), val chapterTotal: Int = 0,
+    val firstChapter: Chapter? = null, val startError: String? = null,
     val chapterOffset: Int = 0, val chapterLoading: Boolean = false, val chapterError: String? = null,
     val language: String = "en", val reader: Chapter? = null,
     val library: List<Manga> = emptyList(), val progress: Map<String, Chapter> = emptyMap(),
-    val theme: String = "System", val dynamicColor: Boolean = false,
+    val theme: String = "Website", val dynamicColor: Boolean = false,
     val readerPreferences: ReaderPreferences = ReaderPreferences(),
     val readerOverrides: Map<String, ReaderOverride> = emptyMap(),
     val mangaSources: List<ReaderSource> = emptyList(), val knownSources: List<ReaderSource> = emptyList(),
     val nativeReader: NativeReaderState = NativeReaderState(),
-    val searchFilters: SearchFilters = SearchFilters(), val comickTags: List<ComickTag> = emptyList(), val tagsLoading: Boolean = false, val tagsError: String? = null
+    val searchFilters: SearchFilters = SearchFilters(), val comickTags: List<ComickTag> = emptyList(), val tagsLoading: Boolean = false, val tagsError: String? = null, val account: AccountState = AccountState()
 )
 fun AppState.effectiveReaderPreferences(): ReaderPreferences = readerOverrides[selected?.id]?.resolve(readerPreferences) ?: readerPreferences
 
 class ReaderViewModel(application: Application): AndroidViewModel(application) {
-    private val api = ComicoApi()
+    private val accountCookies = AccountCookieJar(application)
+    private val api = ComicoApi(accountCookies)
     private val nativeRepository = NativeReaderRepository(api)
     private val prefs = application.getSharedPreferences("reader", 0)
     private val mutable = MutableStateFlow(AppState())
@@ -44,7 +46,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     init {
         val saved = runCatching { JSONArray(prefs.getString("library", "[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
         val progress = runCatching { JSONObject(prefs.getString("progress", "{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
-        mutable.update { it.copy(library = saved, progress = progress, theme = prefs.getString("theme", "System")!!, dynamicColor = prefs.getBoolean("dynamic", false)) }
+        mutable.update { it.copy(library = saved, progress = progress, theme = prefs.getString("theme", "Website")!!, dynamicColor = prefs.getBoolean("dynamic", false)) }
         val readerPreferences = runCatching { JSONObject(prefs.getString("readerGlobal", "{}")!!).readerPreferences() }.getOrDefault(ReaderPreferences())
         val overrides = runCatching { JSONObject(prefs.getString("readerOverrides", "{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).readerOverride() } } }.getOrDefault(emptyMap())
         val knownSources = runCatching { JSONArray(prefs.getString("readerKnownSources", "[]")).objects().map { ReaderSource(it.getString("id"),it.getString("name")) } }.getOrDefault(emptyList())
@@ -52,6 +54,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         val searchFilters = runCatching { JSONObject(prefs.getString("searchFilters", "{}")!!).searchFilters() }.getOrDefault(SearchFilters())
         mutable.update { it.copy(searchFilters = searchFilters, format = searchFilters.type?.apiValue?.replaceFirstChar { c -> c.uppercase() } ?: "All") }
         loadCatalog()
+        refreshAccount()
     }
     fun tab(value: String) {
         val reset = value == "Discover" && mutable.value.query.isNotEmpty()
@@ -75,7 +78,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
     fun open(manga: Manga) {
         detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); readerJob?.cancel()
-        mutable.update { it.copy(selected = manga, reader = null, chapters = emptyList(), chapterTotal = 0, chapterOffset = 0, chapterError = null, mangaSources = emptyList(), chapterLoading = true) }
+        mutable.update { it.copy(selected = manga, reader = null, chapters = emptyList(), chapterTotal = 0, chapterOffset = 0, chapterError = null, mangaSources = emptyList(), chapterLoading = true, firstChapter = null, startError = null) }
         detailJob = viewModelScope.launch {
             try { val detail = api.detail(manga.id); mutable.update { if(it.selected?.id == manga.id) it.copy(selected = detail) else it } }
             catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(chapterError = e.message) } }
@@ -95,9 +98,15 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         chaptersJob = viewModelScope.launch {
             val before = mutable.value; val manga = before.selected ?: return@launch
             val offset = if(more) before.chapterOffset else 0
-            mutable.update { it.copy(chapterLoading = true, chapterError = null, chapters = if(more) it.chapters else emptyList()) }
+            mutable.update { it.copy(chapterLoading = true, chapterError = null, firstChapter = if(more) it.firstChapter else null, startError = null, chapters = if(more) it.chapters else emptyList()) }
             try {
-                val result = api.chapters(manga.id, before.language, offset, before.effectiveReaderPreferences().source?.takeIf { source -> before.mangaSources.any { it.id == source && it.readable } })
+                val source = before.effectiveReaderPreferences().source?.takeIf { source -> before.mangaSources.any { it.id == source && it.readable } }
+                val result = api.chapters(manga.id, before.language, offset, source)
+                if(!more) {
+                    try { val first = api.firstChapter(manga.id,before.language,source);mutable.update { it.copy(firstChapter = first) } }
+                    catch(e: CancellationException) { throw e }
+                    catch(_: Exception) { mutable.update { it.copy(startError = "Couldn't find the first chapter. Refresh the chapter list to try again.") } }
+                }
                 mutable.update { it.copy(chapters = (if(more) it.chapters else emptyList()).plus(result.items).distinctBy { c -> c.id }, chapterTotal = result.total, chapterOffset = offset + 50, chapterLoading = false) }
             } catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(chapterLoading = false, chapterError = e.message) } }
         }
@@ -106,11 +115,14 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         if(mutable.value.reader != null) { readerJob?.cancel(); mutable.update { it.copy(reader = null, nativeReader = NativeReaderState()) } }
         else { detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); mutable.update { it.copy(selected = null, chapterLoading = false) } }
     }
-    fun read(chapter: Chapter) {
+    fun read(chapter: Chapter) = openReader(chapter,false)
+    fun startReading() { mutable.value.firstChapter?.let { openReader(it,true) } }
+    private fun openReader(chapter: Chapter, fromBeginning: Boolean) {
         val id = mutable.value.selected?.id ?: return
-        mutable.update { it.copy(reader = chapter, progress = it.progress + (id to chapter), nativeReader = NativeReaderState(page = prefs.getInt("readerPage:${chapter.id}",0))) }
+        mutable.update { it.copy(reader = chapter, progress = it.progress + (id to chapter), nativeReader = NativeReaderState(page = if(fromBeginning) 0 else prefs.getInt("readerPage:${chapter.id}",0))) }
         val data = JSONObject(); mutable.value.progress.forEach { (key, c) -> data.put(key, JSONObject().put("id",c.id).put("number",c.number).put("title",c.title).put("language",c.language).put("scanlationGroup",c.group).put("externalUrl",c.external)) }
         prefs.edit().putString("progress", data.toString()).apply()
+        if(fromBeginning) prefs.edit().putInt("readerPage:${chapter.id}",0).apply()
         loadReader()
     }
     fun bookmark(manga: Manga) {
@@ -193,4 +205,45 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             catch(e: Exception) { mutable.update { it.copy(tagsLoading = false,tagsError = e.message ?: "Couldn't load Comick tags.") } }
         }
     }
+
+    fun refreshAccount() {
+        if(mutable.value.account.loading) return
+        viewModelScope.launch {
+            mutable.update { it.copy(account = it.account.copy(loading = true,error = null)) }
+            try { val user = api.account();mutable.update { it.copy(account = AccountState(user = user)) } }
+            catch(e: CancellationException) { throw e }
+            catch(e: Exception) { mutable.update { it.copy(account = it.account.copy(loading = false,error = e.message)) } }
+        }
+    }
+    fun signIn(identifier: String, password: String) {
+        if(mutable.value.account.loading) return
+        viewModelScope.launch {
+            mutable.update { it.copy(account = AccountState(loading = true)) }
+            try { val user = api.signIn(identifier,password);mutable.update { it.copy(account = AccountState(user = user,message = "Signed in.")) } }
+            catch(e: CancellationException) { throw e }
+            catch(e: Exception) { mutable.update { it.copy(account = AccountState(error = e.message ?: "Couldn't sign in.")) } }
+        }
+    }
+    fun register(username: String, name: String, email: String, password: String) {
+        if(mutable.value.account.loading) return
+        viewModelScope.launch {
+            mutable.update { it.copy(account = AccountState(loading = true)) }
+            try { api.register(username,name,email,password);mutable.update { it.copy(account = AccountState(message = "Account created. Check your email to verify it, then sign in.")) } }
+            catch(e: CancellationException) { throw e }
+            catch(e: Exception) { mutable.update { it.copy(account = AccountState(error = e.message ?: "Couldn't create your account.")) } }
+        }
+    }
+    fun signOut() {
+        if(mutable.value.account.loading) return
+        viewModelScope.launch {
+            mutable.update { it.copy(account = it.account.copy(loading = true,error = null,message = null)) }
+            var message = "Signed out."
+            try { api.signOut() }
+            catch(e: CancellationException) { throw e }
+            catch(_: Exception) { message = "Signed out on this device. Comico could not confirm server-side sign-out." }
+            finally { accountCookies.clear() }
+            mutable.update { it.copy(account = AccountState(message = message)) }
+        }
+    }
+    fun clearAccountMessages() { if(!mutable.value.account.loading) mutable.update { it.copy(account = it.account.copy(error = null,message = null)) } }
 }

@@ -70,10 +70,10 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
         if(controls && reader.session != null) Surface(color = colors.surface) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { pageJump = (reader.page - if(mode == ReadingMode.DOUBLE) 2 else 1).coerceAtLeast(0) },enabled = reader.page > 0) { Icon(Icons.Rounded.ChevronLeft,"Previous page") }
+                    IconButton(onClick = { pageJump = (reader.page - if(mode == ReadingMode.DOUBLE) 2 else 1).coerceAtLeast(0) },enabled = reader.page > 0) { Icon(if(usesVerticalScrolling(mode,preferences.navigation)) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.ChevronLeft,"Previous page") }
                     Text("${reader.page + 1} / ${reader.session.pages.size}",Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
                     Text(mode.label, style = MaterialTheme.typography.labelSmall)
-                    IconButton(onClick = { pageJump = (reader.page + if(mode == ReadingMode.DOUBLE) 2 else 1).coerceAtMost(reader.session.pages.lastIndex) },enabled = reader.page < reader.session.pages.lastIndex) { Icon(Icons.Rounded.ChevronRight,"Next page") }
+                    IconButton(onClick = { pageJump = (reader.page + if(mode == ReadingMode.DOUBLE) 2 else 1).coerceAtMost(reader.session.pages.lastIndex) },enabled = reader.page < reader.session.pages.lastIndex) { Icon(if(usesVerticalScrolling(mode,preferences.navigation)) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.ChevronRight,"Next page") }
                 }
                 if(reader.session.pages.size > 1) {
                     var slider by remember(reader.page) { mutableFloatStateOf(reader.page.toFloat()) }
@@ -96,23 +96,30 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
                 reader.loading -> Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Text("Loading chapter images…") }
                 reader.session != null -> {
                     val session = reader.session
-                    if(mode == ReadingMode.STRIP) {
-                        val list = rememberLazyListState(initialFirstVisibleItemIndex = reader.page)
-                        LaunchedEffect(session,mode) {
-                            list.scrollToItem(reader.page.coerceIn(0,session.pages.lastIndex))
-                            snapshotFlow { list.firstVisibleItemIndex }.distinctUntilChanged().collect(model::readerPage)
+                    if(usesVerticalScrolling(mode,preferences.navigation)) {
+                        val groupSize = readingGroupSize(mode)
+                        val count = (session.pages.size + groupSize - 1) / groupSize
+                        val list = rememberLazyListState(initialFirstVisibleItemIndex = reader.page / groupSize)
+                        LaunchedEffect(session,mode,preferences.navigation) {
+                            list.scrollToItem((reader.page / groupSize).coerceIn(0,count-1))
+                            snapshotFlow { list.firstVisibleItemIndex }.distinctUntilChanged().collect { model.readerPage(it * groupSize) }
                         }
-                        LaunchedEffect(pageJump) { pageJump?.let { list.scrollToItem(it); model.readerPage(it); pageJump = null } }
-                        LazyColumn(state = list,modifier = Modifier.fillMaxSize(),horizontalAlignment = Alignment.CenterHorizontally) {
-                            itemsIndexed(session.pages,key = { index,_ -> "${chapter.id}:$index" }) { index,url ->
-                                ChapterImage(url,index,true,Modifier.fillMaxWidth(preferences.width.fraction),{ controls = !controls },model::loadReader)
+                        LaunchedEffect(pageJump) { pageJump?.let { list.scrollToItem((it / groupSize).coerceIn(0,count-1)); model.readerPage(it / groupSize * groupSize); pageJump = null } }
+                        LazyColumn(state = list,modifier = Modifier.fillMaxSize(),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(if(mode == ReadingMode.STRIP) 0.dp else 16.dp)) {
+                            items(count,key = { "${chapter.id}:$it:$groupSize" }) { group ->
+                                Row(Modifier.fillMaxWidth(preferences.width.fraction),horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    spreadPages(session.pages.size,group * groupSize,groupSize == 2,preferences.direction).forEach { index ->
+                                        ChapterImage(session.pages[index],index,true,Modifier.weight(1f),{ controls = !controls },model::loadReader)
+                                    }
+                                    if(groupSize == 2 && group * groupSize + 1 >= session.pages.size) Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     } else {
                         val spreadSize = if(mode == ReadingMode.DOUBLE) 2 else 1
                         val count = (session.pages.size + spreadSize - 1) / spreadSize
                         val pager = rememberPagerState(initialPage = (reader.page / spreadSize).coerceIn(0,count-1),pageCount = { count })
-                        LaunchedEffect(session,mode) {
+                        LaunchedEffect(session,mode,preferences.navigation) {
                             pager.scrollToPage((reader.page / spreadSize).coerceIn(0,count-1))
                             snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { model.readerPage(it * spreadSize) }
                         }

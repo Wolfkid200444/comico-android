@@ -33,6 +33,8 @@ fun GlobalReaderOptions(state: AppState, model: ReaderViewModel) {
     val config = state.readerPreferences
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SettingChoice("Reading mode", config.mode, ReadingMode.entries.map { it to it.label }) { model.setGlobalReader(config.copy(mode = it)) }
+        SettingChoice("Page navigation", config.navigation, ReaderNavigation.entries.map { it to it.label }) { model.setGlobalReader(config.copy(navigation = it)) }
+        Text("Long strip always scrolls vertically. Single and double pages can scroll vertically or swipe horizontally.",style = MaterialTheme.typography.bodySmall)
         SettingChoice("Page width", config.width, PageWidth.entries.map { it to it.label }) { model.setGlobalReader(config.copy(width = it)) }
         SettingChoice("Proxy method", config.proxy, ProxyMethod.entries.map { it to it.label }) { model.setGlobalReader(config.copy(proxy = it)) }
         SettingChoice("Preferred source", config.source, sourceChoices(state.knownSources,config.source)) { model.setGlobalReader(config.copy(source = it)) }
@@ -47,6 +49,7 @@ private fun MangaReaderOptions(state: AppState, model: ReaderViewModel) {
     val config = state.readerOverrides[state.selected?.id] ?: ReaderOverride()
     val global = state.readerPreferences
     SettingChoice("Reading mode", config.mode, listOf< Pair<ReadingMode?,String> >(null to "Use global · ${global.mode.label}") + ReadingMode.entries.map { it to it.label }) { model.setMangaReader(config.copy(mode = it)) }
+    SettingChoice("Page navigation",config.navigation,listOf<Pair<ReaderNavigation?,String>>(null to "Use global · ${global.navigation.label}") + ReaderNavigation.entries.map { it to it.label }) { model.setMangaReader(config.copy(navigation = it)) }
     SettingChoice("Page width", config.width, listOf<Pair<PageWidth?,String>>(null to "Use global · ${global.width.label}") + PageWidth.entries.map { it to it.label }) { model.setMangaReader(config.copy(width = it)) }
     SettingChoice("Proxy method", config.proxy, listOf<Pair<ProxyMethod?,String>>(null to "Use global · ${global.proxy.label}") + ProxyMethod.entries.map { it to it.label }) { model.setMangaReader(config.copy(proxy = it)) }
     val available = (state.nativeReader.sources + state.mangaSources).distinctBy { it.id }
