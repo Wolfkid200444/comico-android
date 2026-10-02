@@ -1,0 +1,48 @@
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_25aa5a699a841d::t_cbef114a38b3a8 58,61-63,90-91,175,223,233-235,239,247
+app/src/test/java/moe/comico/reader/ReaderPreferencesTest.kt
+  s_25aa5a699a841d::t_6308cb198f152a 31,33,45-51
+  s_25aa5a699a841d::t_ec9f1f643994d8 52
+app/src/main/java/moe/comico/reader/ReaderSettings.kt
+  s_25aa5a699a841d::t_39dd10f2b9dbbc 36-37,52
+app/src/main/java/moe/comico/reader/ReaderPreferences.kt
+  s_25aa5a699a841d::t_39dd10f2b9dbbc 8,16-17,30-31,33-34,42-45,51-53
+app/src/main/java/moe/comico/reader/AccountSession.kt
+  s_25aa5a699a841d::t_03a60cc375d052 1-75
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_25aa5a699a841d::t_03a60cc375d052 25-26,30,34-37,78-93
+  s_25aa5a699a841d::t_cbef114a38b3a8 74-77
+app/src/main/java/moe/comico/reader/AccountSettings.kt
+  s_25aa5a699a841d::t_cbef114a38b3a8 1-79
+app/src/main/java/moe/comico/reader/ReaderScreen.kt
+  s_25aa5a699a841d::t_39dd10f2b9dbbc 73,76,99-105,107-115,122
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_25aa5a699a841d::t_cbef114a38b3a8 21,25,49,81,101,103-109,118-120,122,125
+  s_25aa5a699a841d::t_03a60cc375d052 30,35-36,57,208-248
+app/src/test/java/moe/comico/reader/AccountSessionTest.kt
+  s_25aa5a699a841d::t_6308cb198f152a 1-26
+app/src/main/AndroidManifest.xml
+  s_25aa5a699a841d::t_cbef114a38b3a8 3
+README.md
+  s_25aa5a699a841d::t_61fffdd509b037 1,10,17,30,33,58,65,69-70,73-76,143-144,150,155,163-164
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  s_25aa5a699a841d::t_b89927e1989507 28-29,33-57
+version.properties
+  s_25aa5a699a841d::t_1f67c3a8a634aa 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ce722bf0e8f14a5abf0ee2819521c72ab32af956",
+  "prompts": {},
+  "sessions": {
+    "s_25aa5a699a841d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8e-b911-7de2-b76c-68e069a535c4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
