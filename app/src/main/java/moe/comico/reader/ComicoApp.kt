@@ -1,0 +1,235 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+package moe.comico.reader
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import coil.compose.SubcomposeAsyncImage
+
+private val destinations = listOf("Discover" to Icons.Rounded.Explore, "Search" to Icons.Rounded.Search, "Library" to Icons.Rounded.Bookmarks, "Settings" to Icons.Rounded.Settings)
+
+@Composable
+fun ComicoApp(state: AppState, model: ReaderViewModel) {
+    BackHandler(state.selected != null) { model.back() }
+    if(state.reader != null) {
+        ReaderScreen(state.reader, state.selected?.title.orEmpty(), model::back)
+        return
+    }
+    BoxWithConstraints {
+        val wide = maxWidth >= 700.dp
+        Row {
+            if(wide && state.selected == null) NavigationRail(Modifier.fillMaxHeight()) {
+                Spacer(Modifier.height(24.dp))
+                Icon(Icons.AutoMirrored.Rounded.MenuBook, "Comico", tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(36.dp))
+                destinations.forEach { (name, icon) -> NavigationRailItem(selected = state.tab == name, onClick = { model.tab(name) }, icon = { Icon(icon, null) }, label = { Text(name) }) }
+            }
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                topBar = {
+                    if(state.selected != null) TopAppBar(title = { Text("Title details", style = MaterialTheme.typography.titleMedium) }, navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } })
+                    else TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.MenuBook, null, tint = MaterialTheme.colorScheme.primary)
+                        Text("comico", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                    } }, actions = { if(state.tab == "Discover") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") } })
+                },
+                bottomBar = {
+                    if(!wide && state.selected == null) NavigationBar {
+                        destinations.forEach { (name, icon) -> NavigationBarItem(selected = state.tab == name, onClick = { model.tab(name) }, icon = { Icon(icon, null) }, label = { Text(name) }) }
+                    }
+                }
+            ) { padding ->
+                Box(Modifier.padding(padding).fillMaxSize()) {
+                    when {
+                        state.selected != null -> DetailScreen(state, model)
+                        state.tab == "Settings" -> SettingsScreen(state, model)
+                        state.tab == "Library" -> CatalogScreen(state, state.library, model, library = true)
+                        else -> CatalogScreen(state, state.catalog, model, library = false)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderViewModel, library: Boolean) {
+    LazyVerticalGrid(columns = GridCells.Adaptive(145.dp), contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if(library) "Your reading nook" else if(state.tab == "Search") "Find your next story" else "One more chapter.", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text(if(library) "Saved stories, ready when you are." else "Manga, manhwa & a little escape.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if(!library && state.tab == "Search") item(span = { GridItemSpan(maxLineSpan) }) {
+            OutlinedTextField(value = state.query, onValueChange = model::search, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(28.dp), placeholder = { Text("Search titles…") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = { if(state.query.isNotEmpty()) IconButton(onClick = { model.search("") }) { Icon(Icons.Rounded.Close, "Clear search") } })
+        }
+        if(!library) item(span = { GridItemSpan(maxLineSpan) }) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Manga", "Webtoon").forEach { FilterChip(selected = state.format == it, onClick = { model.format(it) }, label = { Text(if(it == "Webtoon") "Webtoons" else it) }) }
+            }
+        }
+        if(!library && state.tab == "Discover") item(span = { GridItemSpan(maxLineSpan) }) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(28.dp)) {
+                Row(Modifier.fillMaxWidth().padding(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("A story for every mood", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Take a break. Turn a page.", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { model.tab("Search") }, contentPadding = PaddingValues(top = 12.dp, end = 12.dp)) { Text("Explore the collection"); Icon(Icons.Rounded.ArrowOutward, null, Modifier.size(18.dp).padding(start = 4.dp)) }
+                    }
+                    Icon(Icons.AutoMirrored.Rounded.MenuBook, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if(library) "Saved titles · ${manga.size}" else if(state.tab == "Search" && state.query.isNotBlank()) "Search results" else "Fresh on the shelf", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                if(!library) IconButton(onClick = { model.loadCatalog() }, enabled = !state.loading) { Icon(Icons.Rounded.Refresh, "Refresh titles") }
+            }
+        }
+        items(manga, key = { it.id }) { item ->
+            MangaCard(item, state.progress[item.id]?.let { "Chapter ${it.number}" }, { model.open(item) })
+        }
+        if(!library && state.error != null) item(span = { GridItemSpan(maxLineSpan) }) { MessageCard(Icons.Rounded.CloudOff, "Couldn't load stories", state.error) { model.loadCatalog(more = state.offset > 0 && manga.isNotEmpty()) } }
+        if(!library && state.loading) item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        if(manga.isEmpty() && (library || (!state.loading && state.error == null))) item(span = { GridItemSpan(maxLineSpan) }) {
+            MessageCard(if(library) Icons.Rounded.BookmarkBorder else Icons.Rounded.Search, if(library) "Make room for your favorites" else "No stories found", if(library) "Open a title and save it to your library." else "Try another title or a different format.")
+        }
+        if(!library && !state.loading && state.error == null && state.offset < state.total) item(span = { GridItemSpan(maxLineSpan) }) {
+            OutlinedButton(onClick = { model.loadCatalog(more = true) }, modifier = Modifier.fillMaxWidth()) { Text("Load more stories") }
+        }
+    }
+}
+
+@Composable
+fun MangaCard(manga: Manga, progress: String? = null, onClick: () -> Unit) {
+    Card(onClick = onClick, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Cover(manga, Modifier.fillMaxWidth().aspectRatio(0.7f))
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(manga.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(progress ?: manga.tags.take(2).joinToString(" · ").ifBlank { manga.format }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+fun Cover(manga: Manga, modifier: Modifier) {
+    SubcomposeAsyncImage(model = manga.cover, contentDescription = "Cover of ${manga.title}", modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh), contentScale = ContentScale.Crop,
+        loading = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) } },
+        error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Rounded.MenuBook, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.outline) } })
+}
+
+@Composable
+fun MessageCard(icon: ImageVector, title: String, body: String, retry: (() -> Unit)? = null) {
+    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(icon, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if(retry != null) FilledTonalButton(onClick = retry) { Text("Try again") }
+        }
+    }
+}
+
+@Composable
+private fun DetailScreen(state: AppState, model: ReaderViewModel) {
+    val manga = state.selected ?: return
+    val saved = state.library.any { it.id == manga.id }
+    val progress = state.progress[manga.id]
+    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Cover(manga, Modifier.width(120.dp).aspectRatio(0.7f).clip(RoundedCornerShape(18.dp)))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(manga.format.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(manga.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(manga.status.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FilledTonalButton(onClick = { model.bookmark(manga) }) { Icon(if(saved) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if(saved) "Saved" else "Save") }
+                }
+            }
+        }
+        if(progress != null) item { Button(onClick = { model.read(progress) }, Modifier.fillMaxWidth()) { Icon(Icons.Rounded.PlayArrow, null); Text("Continue chapter ${progress.number}") } }
+        item { Text(manga.tags.take(6).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+        if(manga.description.isNotBlank()) item {
+            var expanded by remember(manga.id) { mutableStateOf(false) }
+            Column {
+                Text("About this story", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(manga.description, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium, maxLines = if(expanded) Int.MAX_VALUE else 5, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { expanded = !expanded }) { Text(if(expanded) "Read less" else "Read more") }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Chapters", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { menu = true }) { Text(state.language.uppercase()); Icon(Icons.Rounded.ExpandMore, null) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        listOf("en" to "English", "es" to "Spanish", "pt-br" to "Portuguese", "fr" to "French", "ja" to "Japanese").forEach { (code, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; model.language(code) }) }
+                    }
+                }
+            }
+        }
+        items(state.chapters, key = { it.id }) { chapter ->
+            Surface(onClick = { model.read(chapter) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Chapter ${chapter.number}", style = MaterialTheme.typography.titleMedium)
+                        if(chapter.title.isNotBlank()) Text(chapter.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(chapter.group, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(if(chapter.external.isNotEmpty()) Icons.AutoMirrored.Rounded.OpenInNew else Icons.Rounded.ChevronRight, "Read chapter ${chapter.number}", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        if(state.chapterLoading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        if(state.chapterError != null) item { MessageCard(Icons.Rounded.CloudOff, "Couldn't load chapters", state.chapterError) { model.loadChapters() } }
+        if(!state.chapterLoading && state.chapterError == null && state.chapters.isEmpty()) item { MessageCard(Icons.AutoMirrored.Rounded.MenuBook, "No chapters in this language", "Choose another language to check available translations.") }
+        if(!state.chapterLoading && state.chapterOffset < state.chapterTotal) item { OutlinedButton(onClick = { model.loadChapters(true) }, Modifier.fillMaxWidth()) { Text("Load more chapters") } }
+    }
+}
+
+@Composable
+private fun SettingsScreen(state: AppState, model: ReaderViewModel) {
+    LazyColumn(contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        item { Text("Make yourself at home", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
+        item {
+            Text("Appearance", style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("System", "Light", "Dark").forEach { FilterChip(selected = state.theme == it, onClick = { model.theme(it) }, label = { Text(it) }) }
+            }
+        }
+        item { ListItem(headlineContent = { Text("Wallpaper colors") }, supportingContent = { Text("Use your Android color palette on Android 12 and later") }, trailingContent = { Switch(checked = state.dynamicColor, onCheckedChange = model::dynamic) }) }
+        item { HorizontalDivider() }
+        item { Text("Your library", style = MaterialTheme.typography.titleLarge); Text("Saved titles and your last opened chapter are stored on this device. Account sync and offline chapter downloads aren't included yet.", Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Text("Reading", style = MaterialTheme.typography.titleLarge); Text("Comico's reader opens inside the app for supported chapters. Publisher-hosted chapters open in your browser. Reader controls and page position are managed by Comico.", Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Text("Comico for Android", style = MaterialTheme.typography.titleMedium); Text("Version ${BuildConfig.VERSION_NAME} · Independent client for comico.moe", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 180)
+@Composable
+private fun CardPreview() { ComicoTheme { MangaCard(Manga("preview", "Your next favorite story", "", "ongoing", "manga", listOf("Adventure", "Fantasy"))) {} } }

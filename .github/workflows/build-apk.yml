@@ -1,0 +1,117 @@
+name: Build versioned APK
+
+on:
+  push:
+    branches: [main]
+    paths: [version.properties]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Read and validate version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" && "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${BEFORE_SHA}:version.properties" 2>/dev/null; then
+            git show "${BEFORE_SHA}:version.properties" > "$RUNNER_TEMP/previous-version.properties"
+            python3 scripts/read_version.py --previous "$RUNNER_TEMP/previous-version.properties"
+          else
+            python3 scripts/read_version.py
+          fi
+
+      - name: Check whether this version was released
+        id: release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $RELEASE_TAG already exists; leaving it unchanged."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Java 17
+        if: steps.release.outputs.exists == 'false'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        if: steps.release.outputs.exists == 'false'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build packages
+        if: steps.release.outputs.exists == 'false'
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        if: steps.release.outputs.exists == 'false'
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test, lint, and build APK
+        if: steps.release.outputs.exists == 'false'
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+
+      - name: Name APK and calculate checksum
+        if: steps.release.outputs.exists == 'false'
+        env:
+          APP_VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/comico-android-${APP_VERSION}.apk"
+          cd dist
+          sha256sum "comico-android-${APP_VERSION}.apk" > "comico-android-${APP_VERSION}.apk.sha256"
+
+      - name: Upload versioned APK
+        if: steps.release.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: comico-android-${{ steps.version.outputs.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub release
+        if: steps.release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          Download the APK below and install it on Android 8.0 or later.
+
+          This is a debug build signed with the repository's public test key. It is intended for testing, not production distribution. Future builds use the same test key to support updates.
+
+          See the README for installation and build instructions. The .sha256 file contains the APK checksum.
+          NOTES
+          gh release create "$RELEASE_TAG" dist/* --target "$RELEASE_SHA" --title "Comico Android $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
