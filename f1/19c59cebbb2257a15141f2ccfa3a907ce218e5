@@ -1,0 +1,61 @@
+README.md
+  s_25aa5a699a841d::t_d2fd4652b989d3 17,136-137,143,148,156-157
+  s_25aa5a699a841d::t_339ccd95ab7126 33-46
+  s_25aa5a699a841d::t_6ea2ea853674e7 29,31,47-68,169
+app/src/main/AndroidManifest.xml
+  s_25aa5a699a841d::t_a28841fb78e08b 3
+app/src/main/java/moe/comico/reader/NativeReaderRepository.kt
+  s_25aa5a699a841d::t_b2a440ec1bdaad 1-106
+app/src/main/res/drawable/ic_comico.xml
+  s_25aa5a699a841d::t_a28841fb78e08b 1
+app/src/test/java/moe/comico/reader/SearchFiltersTest.kt
+  s_25aa5a699a841d::t_339ccd95ab7126 1-40
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_25aa5a699a841d::t_7e94de6bd4aead 125,153-156
+  s_25aa5a699a841d::t_713e7a4abf7ca1 24-27,31-32,35,42-43,48-53,62,71,77-78,83-90,100,106-107,111,114,123-124,126-152,157-195
+  s_25aa5a699a841d::t_19be1128c872aa 28-29
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_25aa5a699a841d::t_fb1579a1d35e99 8-9,26-31,33-39,42-44,46-63,65-66
+app/src/main/java/moe/comico/reader/ReaderPreferences.kt
+  s_25aa5a699a841d::t_fb1579a1d35e99 1-35,37-47
+  s_25aa5a699a841d::t_7e94de6bd4aead 36
+app/src/main/res/values/colors.xml
+  s_25aa5a699a841d::t_a28841fb78e08b 1
+app/src/main/java/moe/comico/reader/ReaderSettings.kt
+  s_25aa5a699a841d::t_914883de479be0 1-77
+app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+  s_25aa5a699a841d::t_a28841fb78e08b 1
+app/src/main/res/drawable/ic_comico_foreground.xml
+  s_25aa5a699a841d::t_a28841fb78e08b 1
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_25aa5a699a841d::t_914883de479be0 40,57,82-83,95-100,170-171,184,238-240
+  s_25aa5a699a841d::t_8f31ba3022719f 5-6
+app/src/main/java/moe/comico/reader/ReaderScreen.kt
+  s_25aa5a699a841d::t_c9451a74cf2678 7-10,12-16,20,23,26-30,32,34-40,43-47,49-53,56,58-67,69-85,90,92-117,119-128,131-142,144-160,162-178
+  s_25aa5a699a841d::t_7e94de6bd4aead 86-89
+  s_25aa5a699a841d::t_68442403c51865 161
+app/src/main/java/moe/comico/reader/SearchFilterDialog.kt
+  s_25aa5a699a841d::t_b542505fbeea42 1-45
+app/src/main/java/moe/comico/reader/SearchFilters.kt
+  s_25aa5a699a841d::t_6dbf5844bbd1e6 1-28
+app/src/test/java/moe/comico/reader/ReaderPreferencesTest.kt
+  s_25aa5a699a841d::t_2e5352881dcd26 1-57
+version.properties
+  s_25aa5a699a841d::t_cdfa58d5e2dd84 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f119c59cebbb2257a15141f2ccfa3a907ce218e5",
+  "prompts": {},
+  "sessions": {
+    "s_25aa5a699a841d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8e-b911-7de2-b76c-68e069a535c4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
