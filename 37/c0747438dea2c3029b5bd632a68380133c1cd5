@@ -1,0 +1,19 @@
+.github/workflows/build-apk.yml
+  s_c0cf0e0e99ae21::t_f6290274932ea1 67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "37c0747438dea2c3029b5bd632a68380133c1cd5",
+  "prompts": {},
+  "sessions": {
+    "s_c0cf0e0e99ae21": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8f-5c7e-7863-96a7-0f6bfb6f17b2",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
