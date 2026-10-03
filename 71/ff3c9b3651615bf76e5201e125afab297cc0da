@@ -1,0 +1,37 @@
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_25aa5a699a841d::t_5b3cefe1b77e18 101
+  s_0976e259204c45::t_9d96f4ec1686ed 16-17,21-24
+app/src/test/java/moe/comico/reader/AccountDataTest.kt
+  s_25aa5a699a841d::t_5b3cefe1b77e18 28-40
+app/src/main/java/moe/comico/reader/AccountData.kt
+  s_25aa5a699a841d::t_5b3cefe1b77e18 17-26
+  s_0976e259204c45::t_e305f4310a9427 15
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_0976e259204c45::t_c3667553dbeeb1 84-91,202,205,213-255,300-335
+app/src/test/java/moe/comico/reader/ApiModelsTest.kt
+  s_0976e259204c45::t_d615250df9d3f3 15-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "71ff3c9b3651615bf76e5201e125afab297cc0da",
+  "prompts": {},
+  "sessions": {
+    "s_0976e259204c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0feea-f311-7631-b450-82e71f2f3495",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_25aa5a699a841d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fa8e-b911-7de2-b76c-68e069a535c4",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
