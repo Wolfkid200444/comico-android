@@ -1,0 +1,47 @@
+app/src/main/AndroidManifest.xml
+  s_0976e259204c45::t_f781e14b201754 3,5-7
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  s_e932a6e3efbd02::t_671dd99da4447e 41,128
+app/src/main/java/moe/comico/reader/ApkUpdater.kt
+  s_0976e259204c45::t_051492e4288860 1-70
+app/src/main/java/moe/comico/reader/AppUpdates.kt
+  s_0976e259204c45::t_e11b30b45518fb 1-108
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_0976e259204c45::t_1d3705a6fb75a6 170
+app/src/main/java/moe/comico/reader/DiscoverScreen.kt
+  s_0976e259204c45::t_619c1710d81a30 83
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  s_e932a6e3efbd02::t_3c4285de9c7fb7 23-35
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_0976e259204c45::t_a9d0a89d2919a9 44
+app/src/main/java/moe/comico/reader/UpdateSettings.kt
+  s_0976e259204c45::t_e81a75f9f59a7b 1-81
+app/src/main/res/xml/update_paths.xml
+  s_0976e259204c45::t_1fada56ca19267 1-3
+app/src/test/java/moe/comico/reader/AppUpdatesTest.kt
+  s_0976e259204c45::t_0ad9a918afdf73 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7f2392c1ffe3e41955853d04208273e573be75bb",
+  "prompts": {},
+  "sessions": {
+    "s_0976e259204c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0feea-f311-7631-b450-82e71f2f3495",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_e932a6e3efbd02": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ffe9-297a-7991-a8bc-8818fce38fda",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
