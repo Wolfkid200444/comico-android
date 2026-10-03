@@ -167,7 +167,7 @@ private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderView
                 }
             }
         }
-        if(library) item(span = { GridItemSpan(maxLineSpan) }) { SyncStatus(state,model) }
+        if(library) state.syncError?.let { error -> item(span = { GridItemSpan(maxLineSpan) }) { Text(error, color = MaterialTheme.colorScheme.error) } }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if(library) "Saved titles · ${manga.size}" else "Search results", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

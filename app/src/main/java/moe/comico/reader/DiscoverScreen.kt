@@ -80,7 +80,7 @@ private fun DiscoverCarousel(
         if(section.loading && section.items.isEmpty()) {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(3) { Surface(Modifier.width(168.dp).height(cardHeight),shape = MaterialTheme.shapes.extraLarge,color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                    Column(Modifier.padding(20.dp),verticalArrangement = Arrangement.Center) { LinearProgressIndicator(Modifier.fillMaxWidth());Spacer(Modifier.height(12.dp));Text("Loading stories",style = MaterialTheme.typography.bodySmall) }
+                    // Placeholder cards keep the layout steady; the pull-to-refresh indicator shows loading.
                 } }
             }
         } else if(section.items.isNotEmpty()) {
@@ -101,7 +101,6 @@ private fun DiscoverCarousel(
                     }
                 }
             }
-            if(section.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
         }
         if(section.error != null) {
             Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp),shape = MaterialTheme.shapes.large,color = MaterialTheme.colorScheme.errorContainer) {

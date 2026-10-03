@@ -41,6 +41,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private val accountCookies = AccountCookieJar(application)
     private val api = ComicoApi(accountCookies)
     val discussion = DiscussionController(api, viewModelScope, application)
+    val updates = AppUpdateController(application, viewModelScope)
     private val nativeRepository = NativeReaderRepository(api)
     private val prefs = application.getSharedPreferences("reader", 0)
     private val mutable = MutableStateFlow(AppState())

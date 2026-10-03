@@ -20,7 +20,19 @@ class MainActivity : ComponentActivity() {
             val model: ReaderViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalAppearance provides state.appearance) {
-                ComicoTheme(state.theme, state.dynamicColor) { ComicoApp(state, model) }
+                ComicoTheme(state.theme, state.dynamicColor) {
+                    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner, model) {
+                        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                            if(event == androidx.lifecycle.Lifecycle.Event.ON_START) model.updates.check()
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        if(lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) model.updates.check()
+                        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                    }
+                    ComicoApp(state, model)
+                    UpdatePrompt(model.updates)
+                }
             }
         }
     }

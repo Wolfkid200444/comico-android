@@ -14,7 +14,7 @@ If no release is available yet, check the [APK build workflow](https://github.co
 To install from a computer with Android platform tools and USB debugging enabled:
 
 ```sh
-adb install -r comico-android-0.6.0.apk
+adb install -r comico-android-0.6.1.apk
 ```
 
 Replace the filename with the APK you downloaded. Future builds use the same signing key and application ID, so installing a newer version keeps your local library. If an earlier build used a different signing key, Android requires uninstalling it first, which removes its local data.
@@ -94,6 +94,14 @@ Manga details has a Comments action beside Save. Chapter rows and the reader als
 The interface uses native Material 3 carousels, a search bar, tonal card surfaces, selected navigation indicators, and a scrolling app bar. The default website colors and supplied logo remain in use.
 
 See [account sync contracts](docs/account-sync.md) for endpoints and implementation details.
+
+## App updates
+
+The app checks the latest stable GitHub release when it opens, at most once a day. When a newer version has a published APK, a dialog shows its GitHub release notes and offers **Update** or **Later**. Empty release notes display “No changelog was provided for this release.” You can add or edit release notes on GitHub without changing the app.
+
+Choosing Update downloads the APK inside the app, with progress and cancellation. The app checks the download size, package name, version, and GitHub SHA-256 digest when supplied. Android handles installation and confirms the update; it may first ask you to allow installations from this app. No updates are installed silently.
+
+Use **Profile → three-dot menu → Settings → About** to check manually or disable automatic checks. Update requests go directly to GitHub without your Comico account credentials. Drafts, prereleases, and releases without a ready APK are ignored.
 
 ## Build the app
 

@@ -38,7 +38,7 @@ fun SyncStatus(state: AppState, model: ReaderViewModel) {
 fun HistoryScreen(state: AppState, model: ReaderViewModel) {
     SyncRefreshBox(state, model) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SyncStatus(state,model) }
+        state.syncError?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
         if(state.history.isEmpty()) item { Text("Chapters you read will appear here.") }
         items(state.history,key = { it.chapter.id }) { entry ->
             Card(onClick = { model.openHistory(entry) },modifier = Modifier.fillMaxWidth()) {
@@ -125,6 +125,7 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
             "About" -> item {
                 Text("An independent Kotlin client for comico.moe, built with Jetpack Compose and Material Design 3.")
                 Text("Version ${BuildConfig.VERSION_NAME}")
+                UpdateSettings(model.updates)
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 TextButton(onClick = { uriHandler.openUri("https://github.com/Wolfkid200444/comico-android") }) { Text("Source code") }
             }
