@@ -14,7 +14,7 @@ If no release is available yet, check the [APK build workflow](https://github.co
 To install from a computer with Android platform tools and USB debugging enabled:
 
 ```sh
-adb install -r comico-android-0.5.0.apk
+adb install -r comico-android-0.6.0.apk
 ```
 
 Replace the filename with the APK you downloaded. Future builds use the same signing key and application ID, so installing a newer version keeps your local library. If an earlier build used a different signing key, Android requires uninstalling it first, which removes its local data.
@@ -77,17 +77,19 @@ The app icon uses the supplied comico.moe logo.
 
 Open **Settings → Account** to sign in with your email or username, create an account, or sign out. Registration may require email verification before signing in. Passwords are not saved. Session cookies are encrypted with Android Keystore and sent only to comico.moe over HTTPS.
 
-Signing in loads your account library and server-side reading history. Saving or removing a title updates your account library. Native chapter reading sends chapter, page, page count, and completion progress to the same endpoint used by the website. Offline changes are queued for that account and retried when you open Library or History, resume reading, or tap **Sync now**. Sync errors remain visible with a retry button.
+Signing in loads your account library and server-side reading history. Saving or removing a title updates your account library. Native chapter reading sends chapter, page, page count, and completion progress to the same endpoint used by the website. Offline changes are queued for that account and retried when you open Library or History, resume reading, or pull down to refresh Library, History, or Settings → Data. Sync errors remain visible.
 
 Each account has its own cache and pending changes. Signing out restores the guest library and history. To add guest data to an account, use **Settings → Data → Add guest library and history to this account**. This imports guest data without deleting the guest copy. Clearing account history clears it on both the website and this device. Reader preferences remain local.
 
-**Settings** has Profile, Comments, Reading, Preferences, and Data tabs. While signed out, only Reading and Preferences are enabled; sign-in and registration remain available above the tabs. Profile lets you edit your name, username, and bio. Comments displays your recent website comments. Data includes manual sync, guest import, a JSON export, and history clearing.
+Bottom navigation is **Discover → Search → Library → History → Profile**. The three-dot menu on Profile opens Settings and the website. Profile shows your avatar, banner, badges, reading stats, and experience progress. Pull down to refresh.
 
-Bottom navigation is **Discover → Search → Library → History → Settings**. Search browses the full comico.moe catalog. The search button in Library filters only saved titles on this device, including titles synchronized from your account.
+Settings uses a list of Account, Identity and social links, Comments, Reading, Appearance, Data, Leaderboard, Help, and About pages. Identity supports avatar and banner URLs, Gravatar, and up to five validated social links. Appearance offers multiple palettes, Android dynamic colors, pure black dark mode, date formats, relative dates, and navigation labels. Data includes guest import, JSON export, history clearing, and pull-to-sync.
 
-**History** lists chapters and saved page positions; tap an entry to resume. **Settings → Preferences → Leaderboard** shows the website’s top 50 accounts by experience and links to their public profiles.
+Library’s header search filters saved titles, including synchronized account titles. History entries open manga details; use Resume to continue reading. Settings → Leaderboard shows the website’s top 50 accounts by experience.
 
-**Discover** displays Recently updated, Recent popular, New releases, and Most followed as separate horizontal Material 3 carousels on one page. Each feed loads independently and has its own retry state. Signing in adds New chapters from followed comics and Reading history carousels above the public feeds. Tap a history cover to resume that chapter. Carousel and page scroll positions are retained when switching screens.
+Manga details has a Comments action beside Save. Chapter rows and the reader also have comment buttons, opening separate chapter discussions. Signed-in users can post Markdown and upload images, with automatic inline previews. The composer includes a formatting guide and comment policy. Pull down to refresh discussions.
+
+**Discover** displays Recently updated, Recent popular, New releases, and Most followed as separate horizontal Material 3 carousels on one page. Each feed loads independently and has its own retry state. Signing in adds New chapters from followed comics and Reading history carousels above the public feeds. Tap a history cover to open manga details. Feed arrows open full grids that load more titles as you scroll; pull down to refresh Discover and feed pages. Carousel and page scroll positions are retained when switching screens.
 
 The interface uses native Material 3 carousels, a search bar, tonal card surfaces, selected navigation indicators, and a scrolling app bar. The default website colors and supplied logo remain in use.
 
@@ -159,19 +161,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 The app and the GitHub workflow both read `version.properties`:
 
 ```properties
-VERSION_NAME=0.5.0
-VERSION_CODE=5
+VERSION_NAME=0.6.0
+VERSION_CODE=6
 ```
 
 To publish the next version:
 
 1. Finish the code changes you want included in the APK.
-2. Update **both** values. For example, use `VERSION_NAME=0.6.0` and `VERSION_CODE=6`. The version name must use `major.minor.patch`, and both values must increase.
+2. Update **both** values. For example, use `VERSION_NAME=0.7.0` and `VERSION_CODE=7`. The version name must use `major.minor.patch`, and both values must increase.
 3. Commit the version change and push it to `main`:
 
    ```sh
    git add version.properties
-   git commit -m "Release version 0.6.0"
+   git commit -m "Release version 0.7.0"
    git push origin main
    ```
 
@@ -179,8 +181,8 @@ The [workflow](.github/workflows/build-apk.yml) then:
 
 - Validates the version change.
 - Runs unit tests and Android lint, then builds the debug APK.
-- Uploads `comico-android-0.6.0.apk` and its SHA-256 checksum as workflow artifacts.
-- Creates the `v0.6.0` tag and GitHub release at the exact commit that triggered the build.
+- Uploads `comico-android-<version>.apk` and its SHA-256 checksum as workflow artifacts.
+- Creates the version tag and GitHub release at the exact commit that triggered the build.
 
 The initial push also publishes the starting version. Other source changes do not trigger this release workflow until you update the version file. Editing comments or whitespace without changing the version values skips the build. Existing releases remain unchanged.
 

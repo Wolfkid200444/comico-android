@@ -27,8 +27,20 @@ fun JSONObject.followedUpdateManga(): Manga = optJSONObject("manga")?.manga() ?:
 fun mergeHistory(remote: List<HistoryEntry>, local: List<HistoryEntry>) = (remote + local).groupBy { it.chapter.id }.values.map { entries -> entries.maxBy { runCatching { Instant.parse(it.readAt) }.getOrDefault(Instant.EPOCH) } }.sortedByDescending { runCatching { Instant.parse(it.readAt) }.getOrDefault(Instant.EPOCH) }
 data class LeaderboardEntry(val id: String, val name: String, val username: String, val image: String, val level: Int, val exp: Long)
 fun JSONObject.leaderboardEntry() = LeaderboardEntry(getString("id"),optString("name"),optString("username"),optString("image").takeUnless { it == "null" }.orEmpty(),optInt("level"),optLong("exp"))
-data class AccountComment(val id: String, val body: String, val createdAt: String, val mangaTitle: String)
-fun JSONObject.accountComment() = AccountComment(getString("id"),optString("body"),optString("createdAt"),optJSONObject("manga")?.optString("title").orEmpty())
+data class AccountComment(
+    val id: String, val body: String, val createdAt: String, val mangaTitle: String,
+    val context: String = "", val coverUrl: String = "", val href: String = ""
+)
+fun JSONObject.accountComment(): AccountComment {
+    fun text(key: String) = optString(key).takeUnless { it == "null" }.orEmpty()
+    val mangaTitle = optJSONObject("manga")?.optString("title").orEmpty()
+    val chapter = optJSONObject("chapter")
+    val chapterNumber = chapter?.optString("number")?.takeUnless { it == "null" }.orEmpty()
+    val fallback = listOf(mangaTitle, chapterNumber.takeIf { it.isNotBlank() }?.let { "Chapter $it" }.orEmpty())
+        .filter { it.isNotBlank() }.joinToString(" · ")
+    return AccountComment(getString("id"),text("body"),text("createdAt"),mangaTitle,
+        text("context").ifBlank { fallback }, absoluteUrl(text("coverUrl")), text("href"))
+}
 
 fun accountStorageKey(key: String, owner: String?) = owner?.let { "$key:account:$it" } ?: key
 

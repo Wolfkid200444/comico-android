@@ -63,6 +63,9 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
                 Text(state.selected?.title.orEmpty(), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack,"Back to chapters") } },actions = {
+            IconButton(onClick = { model.discussion.open(DiscussionTarget(chapter.id, "${state.selected?.title.orEmpty()} · Chapter ${chapter.number}", chapter = true)) }) {
+                Icon(Icons.Rounded.ChatBubbleOutline, "Chapter comments")
+            }
             IconButton(onClick = model::loadReader,enabled = !reader.loading) { Icon(Icons.Rounded.Refresh,"Reload chapter images") }
             IconButton(onClick = { settings = true }) { Icon(Icons.Rounded.Tune,"Reader settings") }
         })

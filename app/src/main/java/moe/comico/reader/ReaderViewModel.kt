@@ -14,10 +14,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class AppState(
+    val feed: DiscoverFeed? = null, val feedPage: DiscoverPage = DiscoverPage(),
     val discoverSections: Map<DiscoverFeed,DiscoverSection> = emptyMap(), val history: List<HistoryEntry> = emptyList(),
     val syncLoading: Boolean = false, val syncError: String? = null, val lastSync: String? = null,
     val leaderboard: List<LeaderboardEntry> = emptyList(), val leaderboardLoading: Boolean = false, val leaderboardError: String? = null,
-    val comments: List<AccountComment> = emptyList(), val profileBio: String = "", val accountDataLoading: Boolean = false, val accountDataError: String? = null,
+    val publicProfile: PublicProfile? = null, val comments: List<AccountComment> = emptyList(), val profileBio: String = "", val profileSettings: ProfileEdit = ProfileEdit(), val accountDataLoading: Boolean = false, val accountDataError: String? = null,
     val tab: String = "Discover", val query: String = "", val format: String = "All",
     val catalog: List<Manga> = emptyList(), val total: Int = 0, val offset: Int = 0,
     val loading: Boolean = false, val error: String? = null,
@@ -27,7 +28,7 @@ data class AppState(
     val language: String = "en", val reader: Chapter? = null,
     val libraryQuery: String = "", val librarySearchVisible: Boolean = false,
     val library: List<Manga> = emptyList(), val progress: Map<String, Chapter> = emptyMap(),
-    val theme: String = "Website", val dynamicColor: Boolean = false,
+    val theme: String = "Website", val dynamicColor: Boolean = false, val appearance: AppearanceOptions = AppearanceOptions(),
     val readerPreferences: ReaderPreferences = ReaderPreferences(),
     val readerOverrides: Map<String, ReaderOverride> = emptyMap(),
     val mangaSources: List<ReaderSource> = emptyList(), val knownSources: List<ReaderSource> = emptyList(),
@@ -39,6 +40,7 @@ fun AppState.effectiveReaderPreferences(): ReaderPreferences = readerOverrides[s
 class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private val accountCookies = AccountCookieJar(application)
     private val api = ComicoApi(accountCookies)
+    val discussion = DiscussionController(api, viewModelScope, application)
     private val nativeRepository = NativeReaderRepository(api)
     private val prefs = application.getSharedPreferences("reader", 0)
     private val mutable = MutableStateFlow(AppState())
@@ -48,6 +50,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private var accountDataJob: Job? = null
     private var activeOwner: String? = null
     private val discoverJobs = mutableMapOf<DiscoverFeed,Job>()
+    private var feedPageJob: Job? = null
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
     private var chaptersJob: Job? = null
@@ -63,6 +66,13 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         mutable.update { it.copy(readerPreferences = readerPreferences, readerOverrides = overrides, knownSources = knownSources) }
         val searchFilters = runCatching { JSONObject(prefs.getString("searchFilters", "{}")!!).searchFilters() }.getOrDefault(SearchFilters())
         mutable.update { it.copy(searchFilters = searchFilters, format = searchFilters.type?.apiValue?.replaceFirstChar { c -> c.uppercase() } ?: "All") }
+        mutable.update { it.copy(appearance = AppearanceOptions(
+            palette = prefs.getString("palette", if(it.dynamicColor) "Dynamic" else "Default")!!,
+            pureBlack = prefs.getBoolean("pureBlack", false),
+            dateFormat = prefs.getString("dateFormat", "M/d/yy")!!,
+            relativeDates = prefs.getBoolean("relativeDates", false),
+            alwaysShowNavLabels = prefs.getBoolean("alwaysShowNavLabels", true)
+        )) }
         loadOwner(null)
         loadDiscover()
         refreshAccount()
@@ -155,6 +165,13 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun theme(value: String) { mutable.update { it.copy(theme = value) }; prefs.edit().putString("theme",value).apply() }
+    fun appearance(value: AppearanceOptions) {
+        mutable.update { it.copy(appearance = value, dynamicColor = value.palette == "Dynamic") }
+        prefs.edit().putString("palette", value.palette).putBoolean("pureBlack", value.pureBlack)
+            .putString("dateFormat", value.dateFormat).putBoolean("relativeDates", value.relativeDates)
+            .putBoolean("alwaysShowNavLabels", value.alwaysShowNavLabels)
+            .putBoolean("dynamic", value.palette == "Dynamic").apply()
+    }
     fun dynamic(value: Boolean) { mutable.update { it.copy(dynamicColor = value) }; prefs.edit().putBoolean("dynamic",value).apply() }
 
     private fun rememberSources(sources: List<ReaderSource>) {
@@ -282,13 +299,38 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         val library = runCatching { JSONArray(prefs.getString(ownerKey("library"),"[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
         val history = runCatching { JSONArray(prefs.getString(ownerKey("history"),"[]")).objects().map { it.historyEntry() } }.getOrDefault(emptyList())
         val progress = runCatching { JSONObject(prefs.getString(ownerKey("progress"),"{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
-        mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress,syncError = null,lastSync = null,comments = emptyList(),profileBio = "",accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
+        mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress,syncError = null,lastSync = null,publicProfile = null,comments = emptyList(),profileBio = "",profileSettings = ProfileEdit(),accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
     }
     private fun activateAccount(user: AccountUser?) {
         progressSyncJob?.cancel();accountDataJob?.cancel()
         if(activeOwner != user?.id) loadOwner(user?.id)
         if(user != null) { syncAccount();loadAccountData() }
         if(mutable.value.tab == "Discover") loadDiscover()
+    }
+    fun openFeed(feed: DiscoverFeed) {
+        feedPageJob?.cancel()
+        mutable.update { it.copy(tab = "Feed", feed = feed, feedPage = DiscoverPage()) }
+        loadFeedPage()
+    }
+    fun loadFeedPage(more: Boolean = false) {
+        val before = mutable.value
+        val feed = before.feed ?: return
+        if(more && (before.feedPage.loading || !before.feedPage.hasMore)) return
+        feedPageJob?.cancel()
+        feedPageJob = viewModelScope.launch {
+            val offset = if(more) before.feedPage.offset else 0
+            mutable.update { it.copy(feedPage = if(more) it.feedPage.copy(loading = true, error = null)
+                else DiscoverPage(loading = true)) }
+            try {
+                val result = api.discoverPage(feed, before.searchFilters, offset)
+                mutable.update { current ->
+                    val items = ((if(more) current.feedPage.items else emptyList()) + result.items).distinctBy { it.id }
+                    if(current.feed != feed) current else current.copy(feedPage = result.copy(items = items,
+                        hasMore = result.hasMore && (!more || items.size > current.feedPage.items.size)))
+                }
+            } catch(e: CancellationException) { throw e }
+            catch(e: Exception) { mutable.update { it.copy(feedPage = it.feedPage.copy(loading = false, error = e.message)) } }
+        }
     }
     fun loadDiscover(refresh: Boolean = false) {
         visibleDiscoverFeeds(mutable.value.account.user != null).filterNot { it == DiscoverFeed.HISTORY }.forEach { feed ->
@@ -324,8 +366,6 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
     fun openHistory(entry: HistoryEntry) {
         open(entry.manga)
-        prefs.edit().putInt(ownerKey("readerPage:${entry.chapter.id}"),entry.page).apply()
-        read(entry.chapter)
     }
     fun syncAccount() {
         val user = mutable.value.account.user ?: return
@@ -390,19 +430,29 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         accountDataJob = viewModelScope.launch {
             mutable.update { it.copy(accountDataLoading = true,accountDataError = null) }
             try {
+                val profile = api.publicProfile(user.username)
+                mutable.update { if(it.account.user?.id == user.id) it.copy(publicProfile = profile) else it }
                 val settings = api.profileSettings()
-                mutable.update { it.copy(profileBio = settings.optString("bio").takeUnless { value -> value == "null" }.orEmpty()) }
+                mutable.update { it.copy(profileBio = settings.profileEdit().bio, profileSettings = settings.profileEdit()) }
                 val comments = api.comments(user.username)
                 mutable.update { it.copy(comments = comments) }
             } catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(accountDataError = e.message) } }
             finally { mutable.update { it.copy(accountDataLoading = false) } }
         }
     }
-    fun saveProfile(name: String, username: String, bio: String) {
+    fun saveProfile(name: String, username: String, profile: ProfileEdit) {
         if(mutable.value.accountDataLoading || mutable.value.account.user == null) return
         accountDataJob = viewModelScope.launch {
             mutable.update { it.copy(accountDataLoading = true,accountDataError = null) }
-            try { api.saveProfile(name,username,bio);val user = api.account();mutable.update { it.copy(account = it.account.copy(user = user),profileBio = bio) } }
+            try {
+                require(profile.validationError() == null) { profile.validationError().orEmpty() }
+                api.saveProfile(name,username,profile)
+                val user = api.account()
+                val updated = user?.let { api.publicProfile(it.username) }
+                val settings = api.profileSettings().profileEdit()
+                mutable.update { it.copy(account = it.account.copy(user = user), publicProfile = updated,
+                    profileBio = settings.bio, profileSettings = settings) }
+            }
             catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(accountDataError = e.message) } }
             finally { mutable.update { it.copy(accountDataLoading = false) } }
         }

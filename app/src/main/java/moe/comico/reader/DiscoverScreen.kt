@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun DiscoverScreen(state: AppState, model: ReaderViewModel) {
-    DiscoverContent(state,onSearch = { model.tab("Search") },onRefresh = { model.loadDiscover(refresh = true);model.syncAccount() },onRetry = model::loadDiscoverFeed,onOpen = model::open,onHistory = model::openHistory,onLibrary = { model.tab("Library") },onHistoryTab = { model.tab("History") })
+    DiscoverContent(state,onSearch = { model.tab("Search") },onRefresh = { model.loadDiscover(refresh = true);model.syncAccount() },onRetry = model::loadDiscoverFeed,onOpen = model::open,onHistory = model::openHistory,onLibrary = { model.tab("Library") },onHistoryTab = { model.tab("History") },onFeed = model::openFeed)
 }
 
 @Composable
@@ -32,16 +32,17 @@ private fun DiscoverContent(
     onOpen: (Manga) -> Unit,
     onHistory: (HistoryEntry) -> Unit,
     onLibrary: () -> Unit,
-    onHistoryTab: () -> Unit
+    onHistoryTab: () -> Unit,
+    onFeed: (DiscoverFeed) -> Unit
 ) {
     val feeds = visibleDiscoverFeeds(state.account.user != null)
-    LazyColumn(contentPadding = PaddingValues(top = 12.dp,bottom = 24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
+    val refreshing = state.syncLoading || feeds.any { state.discoverSections[it]?.loading == true }
+    PullToRefreshBox(isRefreshing = refreshing, onRefresh = { if(!refreshing) onRefresh() },
+        modifier = Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 12.dp,bottom = 24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
         item(key = "header") {
             Column(Modifier.padding(horizontal = 20.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row {
-                    Text("Discover",style = MaterialTheme.typography.headlineLarge,modifier = Modifier.weight(1f))
-                    IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh,"Refresh Discover feeds") }
-                }
+                Text("Discover",style = MaterialTheme.typography.headlineLarge)
                 Text("A quiet place to discover, track and read manga, manhwa and webtoons from supported sources and scanlation groups.",style = MaterialTheme.typography.bodyMedium,color = MaterialTheme.colorScheme.onSurfaceVariant)
                 DockedSearchBar(inputField = { SearchBarDefaults.InputField(query = "",onQueryChange = {},onSearch = { onSearch() },expanded = false,onExpandedChange = { if(it) onSearch() },placeholder = { Text("Search manga and webtoons") },leadingIcon = { Icon(Icons.Rounded.Search,null) }) },expanded = false,onExpandedChange = { if(it) onSearch() },modifier = Modifier.fillMaxWidth()) {}
             }
@@ -49,8 +50,9 @@ private fun DiscoverContent(
         items(feeds,key = { if(it.accountOnly) "${state.account.user?.id}:${it.name}" else it.name }) { feed ->
             val history = if(feed == DiscoverFeed.HISTORY) state.history.distinctBy { it.manga.id } else emptyList()
             val section = if(feed == DiscoverFeed.HISTORY) DiscoverSection(items = history.map { it.manga },loading = state.syncLoading && history.isEmpty(),error = state.syncError) else state.discoverSections[feed] ?: DiscoverSection(loading = true)
-            DiscoverCarousel(feed,section,history,state.progress,onRetry = { onRetry(feed) },onOpen = onOpen,onHistory = onHistory,onMore = when(feed) { DiscoverFeed.HISTORY -> onHistoryTab;DiscoverFeed.UPDATES -> onLibrary;else -> null })
+            DiscoverCarousel(feed,section,history,state.progress,onRetry = { onRetry(feed) },onOpen = onOpen,onHistory = onHistory,onMore = when(feed) { DiscoverFeed.HISTORY -> onHistoryTab;else -> { { onFeed(feed) } } })
         }
+    }
     }
 }
 
@@ -65,7 +67,11 @@ private fun DiscoverCarousel(
     onHistory: (HistoryEntry) -> Unit,
     onMore: (() -> Unit)?
 ) {
-    val cardHeight = 216.dp + 80.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val textHeight = with(LocalDensity.current) {
+        MaterialTheme.typography.titleSmall.lineHeight.toDp() * 2 +
+            MaterialTheme.typography.labelMedium.lineHeight.toDp()
+    }
+    val cardHeight = 216.dp + textHeight + 44.dp
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp,end = 12.dp)) {
             Text(feed.label,style = MaterialTheme.typography.titleLarge,modifier = Modifier.weight(1f).padding(top = 8.dp))
@@ -79,7 +85,7 @@ private fun DiscoverCarousel(
             }
         } else if(section.items.isNotEmpty()) {
             HorizontalUncontainedCarousel(
-                state = rememberCarouselState { section.items.size },
+                state = rememberCarouselState { minOf(12, section.items.size) },
                 itemWidth = 168.dp,itemSpacing = 12.dp,
                 contentPadding = PaddingValues(horizontal = 20.dp),modifier = Modifier.fillMaxWidth().height(cardHeight)
             ) { index ->
@@ -88,7 +94,7 @@ private fun DiscoverCarousel(
                 Surface(onClick = { if(entry != null) onHistory(entry) else onOpen(manga) },modifier = Modifier.fillMaxHeight().maskClip(MaterialTheme.shapes.extraLarge),shape = MaterialTheme.shapes.extraLarge,color = MaterialTheme.colorScheme.surfaceContainer) {
                     Column {
                         Cover(manga,Modifier.fillMaxWidth().height(216.dp))
-                        Column(Modifier.padding(12.dp),verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 28.dp),verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(manga.title,style = MaterialTheme.typography.titleSmall,maxLines = 2,minLines = 2,overflow = TextOverflow.Ellipsis)
                             Text(entry?.let { "Chapter ${it.chapter.number} · Page ${it.page + 1}" } ?: progress[manga.id]?.let { "Chapter ${it.number}" } ?: manga.format.replaceFirstChar { it.uppercase() },style = MaterialTheme.typography.labelMedium,maxLines = 1,overflow = TextOverflow.Ellipsis,color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

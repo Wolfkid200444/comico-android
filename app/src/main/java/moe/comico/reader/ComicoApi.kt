@@ -41,6 +41,12 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
             }
             val accountRoute = url.toHttpUrl().host == "comico.moe" && listOf("/api/library","/api/history","/api/progress","/api/settings").any { url.toHttpUrl().encodedPath.startsWith(it) }
             if (!response.isSuccessful && accountRoute && response.code in listOf(401,403)) throw IOException("Your account session is unavailable. Sign out and sign in again.")
+            if (!response.isSuccessful && url.toHttpUrl().encodedPath.startsWith("/api/comments")) {
+                val error = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+                throw IOException(error?.optString("statusMessage")?.takeIf { it.isNotBlank() }
+                    ?: if(response.code in listOf(401,403)) "Sign in with an account allowed to comment."
+                    else "Comment request failed (HTTP ${response.code}). Try again.")
+            }
             if (!response.isSuccessful) throw IOException(when(response.code) {
                 429 -> "Too many requests. Wait a minute and try again."
                 404 -> "This title or chapter is no longer available."
@@ -57,6 +63,24 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
     suspend fun post(path: String, query: Map<String, String>, body: JSONObject): JSONObject {
         val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString(), body))
+    }
+    suspend fun discussion(target: DiscussionTarget): List<DiscussionComment> =
+        get("/api/comments", target.query() + ("sort" to "newest")).optJSONArray("items").objects().map { it.discussionComment() }
+    suspend fun postDiscussion(target: DiscussionTarget, body: String) {
+        requestText("$baseUrl/api/comments", target.payload(body))
+    }
+    suspend fun uploadCommentImage(bytes: ByteArray, type: String): String = withContext(Dispatchers.IO) {
+        val body = okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("file", "image." + when(type) { "image/jpeg" -> "jpg"; "image/apng" -> "png"; else -> type.substringAfter("/") },
+                bytes.toRequestBody(type.toMediaType())).build()
+        val request = Request.Builder().url("$baseUrl/api/comments/images").header("Origin", BASE_URL)
+            .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME}").post(body).build()
+        client.newCall(request).execute().use { response ->
+            val data = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+            if(!response.isSuccessful) throw IOException(data?.optString("statusMessage")?.takeIf { it.isNotBlank() }
+                ?: "Image upload failed (HTTP ${response.code}).")
+            data?.getString("url") ?: throw IOException("The server returned no image URL.")
+        }
     }
     suspend fun mangaSources(id: String) = JSONArray(requestText("$baseUrl/api/manga/$id/sources")).objects().map {
         ReaderSource(it.getString("sourceId"), it.optString("name", it.getString("sourceId")), it.optInt("readableChapterCount") > 0)
@@ -106,10 +130,34 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         filters.demographic?.let { url.addQueryParameter("demographic",it.apiValue) }
         return JSONArray(requestText(url.build().toString())).objects().map { it.manga() }.filter { it.rating in filters.allowedRatings() }
     }
+    suspend fun discoverPage(feed: DiscoverFeed, filters: SearchFilters, offset: Int): DiscoverPage {
+        val limit = 30
+        val url = (baseUrl + if(feed == DiscoverFeed.UPDATES) "/api/library/updates" else "/api/stats/titles")
+            .toHttpUrl().newBuilder().addQueryParameter("limit", limit.toString())
+            .addQueryParameter("offset", offset.toString())
+        if(feed != DiscoverFeed.UPDATES) {
+            url.addQueryParameter("sort", feed.sort)
+            filters.allowedRatings().forEach { url.addQueryParameter("contentRating", it) }
+            filters.type?.let { url.addQueryParameter("formats", it.apiValue) }
+            filters.demographic?.let { url.addQueryParameter("demographic", it.apiValue) }
+        }
+        val body = requestText(url.build().toString())
+        val rows = if(feed == DiscoverFeed.UPDATES) JSONObject(body).getJSONArray("items").objects()
+            else JSONArray(body).objects()
+        val items = rows.map { if(feed == DiscoverFeed.UPDATES) it.followedUpdateManga() else it.manga() }
+            .filter { it.rating in filters.allowedRatings() }.distinctBy { it.id }
+        return DiscoverPage(items, offset + rows.size, rows.size == limit)
+    }
+    suspend fun publicProfile(username: String): PublicProfile {
+        val url = "$baseUrl/api/users".toHttpUrl().newBuilder().addPathSegment(username).build()
+        val profile = JSONObject(requestText(url.toString())).publicProfile()
+        return profile.copy(badgeArtwork = awardedBadgeArtwork(profile.badges, profile.supporter))
+    }
     suspend fun profileSettings() = get("/api/settings")
-    suspend fun saveProfile(name: String, username: String, bio: String) {
+    suspend fun saveProfile(name: String, username: String, profile: ProfileEdit) {
+        val settings = profile.payload()
         requestText("$baseUrl/api/auth/update-user",JSONObject().put("name",name.trim()).put("username",username.trim()))
-        requestText("$baseUrl/api/settings",JSONObject().put("bio",bio.trim().ifEmpty { null } ?: JSONObject.NULL),"PATCH")
+        requestText("$baseUrl/api/settings",settings,"PATCH")
     }
     suspend fun comments(username: String): List<AccountComment> {
         val url = "$baseUrl/api/users".toHttpUrl().newBuilder().addPathSegment(username).addPathSegment("comments").addQueryParameter("limit","50").build()

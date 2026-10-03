@@ -19,7 +19,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val model: ReaderViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
-            ComicoTheme(state.theme, state.dynamicColor) { ComicoApp(state, model) }
+            CompositionLocalProvider(LocalAppearance provides state.appearance) {
+                ComicoTheme(state.theme, state.dynamicColor) { ComicoApp(state, model) }
+            }
         }
     }
 }
@@ -28,7 +30,8 @@ class MainActivity : ComponentActivity() {
 fun ComicoTheme(theme: String = "Website", dynamic: Boolean = false, content: @Composable () -> Unit) {
     val dark = when(theme) { "Website", "Dark" -> true; "Light" -> false; else -> isSystemInDarkTheme() }
     val context = LocalContext.current
-    val scheme = if(dynamic && android.os.Build.VERSION.SDK_INT >= 31) {
+    val appearance = LocalAppearance.current
+    val baseScheme = if(dynamic && android.os.Build.VERSION.SDK_INT >= 31) {
         if(dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else if(dark) darkColorScheme(
         primary = Color(0xFFE0573C), onPrimary = Color(0xFF17070A),
@@ -41,7 +44,7 @@ fun ComicoTheme(theme: String = "Website", dynamic: Boolean = false, content: @C
         surfaceVariant = Color(0xFF1B1B1F), onSurfaceVariant = Color(0xFF8C8C96),
         surfaceContainerLowest = Color(0xFF0B0B0D), surfaceContainerLow = Color(0xFF131316),
         surfaceContainer = Color(0xFF1B1B1F), surfaceContainerHigh = Color(0xFF26262B),
-        surfaceContainerHighest = Color(0xFF35353C), outline = Color(0xFF35353C),
+        surfaceContainerHighest = Color(0xFF35353C), outline = Color(0xFF8C8C96),
         outlineVariant = Color(0xFF26262B)
     ) else lightColorScheme(
         primary = Color(0xFFC0442A), onPrimary = Color.White,
@@ -57,5 +60,10 @@ fun ComicoTheme(theme: String = "Website", dynamic: Boolean = false, content: @C
         surfaceContainerHighest = Color(0xFFE5E3DD), outline = Color(0xFFD2CFC7),
         outlineVariant = Color(0xFFE5E3DD)
     )
+    val palette = if(dynamic) baseScheme else namedPalette(appearance.palette, dark) ?: baseScheme
+    val scheme = if(dark && appearance.pureBlack) palette.copy(
+        background = Color.Black, surface = Color.Black, surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = Color.Black, surfaceContainer = Color.Black
+    ) else palette
     MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
 }

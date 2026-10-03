@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -24,21 +23,21 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private fun displayTime(value: String) = runCatching { DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(value)) }.getOrDefault(value)
+@Composable
+private fun displayTime(value: String) = formatAppDate(value, LocalAppearance.current)
 
 @Composable
 fun SyncStatus(state: AppState, model: ReaderViewModel) {
     if(state.account.user != null) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if(state.syncLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
         Text(state.syncError ?: state.lastSync?.let { "Synced ${displayTime(it)}" } ?: "Account data is cached on this device. Changes sync when connected.",style = MaterialTheme.typography.bodySmall,color = if(state.syncError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = model::syncAccount,enabled = !state.syncLoading && !state.account.loading) { Text(if(state.syncError != null) "Retry sync" else "Sync now") }
     } else Text("History and saved titles stay on this device while signed out.",style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
 fun HistoryScreen(state: AppState, model: ReaderViewModel) {
-    LazyColumn(contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Reading history",style = MaterialTheme.typography.headlineLarge) }
+    SyncRefreshBox(state, model) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SyncStatus(state,model) }
         if(state.history.isEmpty()) item { Text("Chapters you read will appear here.") }
         items(state.history,key = { it.chapter.id }) { entry ->
@@ -54,13 +53,14 @@ fun HistoryScreen(state: AppState, model: ReaderViewModel) {
             }
         }
     }
+    }
 }
 
 @Composable
 fun LeaderboardScreen(state: AppState, model: ReaderViewModel) {
     val context = LocalContext.current
     LazyColumn(contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Text("Leaderboard",style = MaterialTheme.typography.headlineLarge);Text("Accounts ranked by experience on comico.moe.");TextButton(onClick = model::loadLeaderboard,enabled = !state.leaderboardLoading) { Text("Refresh") } }
+        item { Text("Accounts ranked by experience on comico.moe.");TextButton(onClick = model::loadLeaderboard,enabled = !state.leaderboardLoading) { Text("Refresh") } }
         if(state.leaderboardLoading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         state.leaderboardError?.let { error -> item { MessageCard(Icons.Rounded.CloudOff,"Couldn't load leaderboard",error,model::loadLeaderboard) } }
         if(!state.leaderboardLoading && state.leaderboardError == null && state.leaderboard.isEmpty()) item { Text("No rankings are available yet.") }
@@ -74,54 +74,62 @@ fun LeaderboardScreen(state: AppState, model: ReaderViewModel) {
 }
 
 @Composable
-fun SettingsScreen(state: AppState, model: ReaderViewModel) {
-    var selected by rememberSaveable { mutableStateOf("Reading") }
+fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, onSelect: (String) -> Unit) {
     val signedIn = state.account.user != null
-    val tabs = listOf("Profile","Comments","Reading","Preferences","Data")
-    LaunchedEffect(signedIn) { if(!signedIn && selected !in listOf("Reading","Preferences")) selected = "Reading" }
-    val index = tabs.indexOf(selected)
-    LazyColumn(contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        item { Text("Settings",style = MaterialTheme.typography.headlineLarge) }
-        item { AccountSettings(state,model) }
-        item { ScrollableTabRow(selectedTabIndex = index,edgePadding = 0.dp) {
-            tabs.forEach { tab -> Tab(selected = tab == selected,onClick = { selected = tab },enabled = signedIn || tab in listOf("Reading","Preferences"),text = { Text(tab) }) }
-        } }
-        when(selected) {
-            "Profile" -> item { ProfilePanel(state,model) }
-            "Comments" -> {
-                item { Text("Your comments",style = MaterialTheme.typography.titleLarge);TextButton(onClick = model::loadAccountData,enabled = !state.accountDataLoading) { Text("Refresh") } }
-                if(state.accountDataLoading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                state.accountDataError?.let { error -> item { Text(error,color = MaterialTheme.colorScheme.error) } }
-                if(!state.accountDataLoading && state.accountDataError == null && state.comments.isEmpty()) item { Text("You haven't posted any comments yet.") }
-                items(state.comments,key = { it.id }) { comment -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) { if(comment.mangaTitle.isNotBlank()) Text(comment.mangaTitle,style = MaterialTheme.typography.titleSmall);Text(comment.body);Text(displayTime(comment.createdAt),style = MaterialTheme.typography.labelSmall) } } }
-            }
-            "Reading" -> item { Text("Global reader defaults",style = MaterialTheme.typography.titleLarge);Spacer(Modifier.height(16.dp));GlobalReaderOptions(state,model);Spacer(Modifier.height(16.dp));Text("Individual manga can override each global setting.") }
-            "Preferences" -> {
-                item { FilledTonalButton(onClick = { model.tab("Leaderboard") }) { Icon(Icons.Rounded.Leaderboard,null);Spacer(Modifier.width(8.dp));Text("Leaderboard") } }
-                item { Text("Appearance",style = MaterialTheme.typography.titleLarge);Column { listOf("Website","System","Light","Dark").forEach { theme -> FilterChip(selected = state.theme == theme,onClick = { model.theme(theme) },label = { Text(theme) }) } } }
-                item { ListItem(headlineContent = { Text("Wallpaper colors") },supportingContent = { Text("Use your Android palette on Android 12 and later") },trailingContent = { Switch(state.dynamicColor,model::dynamic) }) }
-            }
-            "Data" -> item { DataPanel(state,model) }
-        }
-        item { Text("comico.moe for Android · ${BuildConfig.VERSION_NAME}",style = MaterialTheme.typography.bodySmall) }
+    val sections = listOf("Account", "Profile", "Comments", "Reading", "Appearance", "Data", "Leaderboard", "Help", "About")
+    LaunchedEffect(signedIn) { if(!signedIn && selected in listOf("Profile", "Comments", "Data")) onSelect("Menu") }
+    if (selected == "Comments" && signedIn) {
+        CommentsScreen(state, model)
+        return
     }
-}
-
-@Composable
-private fun ProfilePanel(state: AppState, model: ReaderViewModel) {
-    val user = state.account.user ?: return
-    var name by remember(user.id,user.name) { mutableStateOf(user.name) }
-    var username by remember(user.id,user.username) { mutableStateOf(user.username) }
-    var bio by remember(user.id,state.profileBio) { mutableStateOf(state.profileBio) }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Profile",style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField(name,{ name = it },label = { Text("Display name") },modifier = Modifier.fillMaxWidth(),enabled = !state.accountDataLoading)
-        OutlinedTextField(username,{ username = it },label = { Text("Username") },modifier = Modifier.fillMaxWidth(),enabled = !state.accountDataLoading,singleLine = true)
-        OutlinedTextField(bio,{ bio = it },label = { Text("Bio") },modifier = Modifier.fillMaxWidth(),enabled = !state.accountDataLoading)
-        Text(user.email)
-        if(state.accountDataLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        state.accountDataError?.let { Text(it,color = MaterialTheme.colorScheme.error) }
-        Button(onClick = { model.saveProfile(name,username,bio) },enabled = !state.accountDataLoading && !state.account.loading && name.isNotBlank() && username.isNotBlank()) { Text("Save profile") }
+    SyncRefreshBox(state, model, enabled = selected == "Data") {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        if(selected == "Menu") items(sections) { section ->
+            val enabled = signedIn || section !in listOf("Profile", "Comments", "Data")
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text(settingsTooltip(section)) } },
+                state = rememberTooltipState()
+            ) {
+            Surface(onClick = { if(section == "Leaderboard") model.tab("Leaderboard") else onSelect(section) },
+                enabled = enabled, shape = MaterialTheme.shapes.large) {
+                ListItem(headlineContent = { Text(if(section == "Profile") "Identity and social links" else section) },
+                    leadingContent = { Icon(when(section) {
+                        "Account" -> Icons.Rounded.ManageAccounts
+                        "Profile" -> Icons.Rounded.Person
+                        "Comments" -> Icons.Rounded.ChatBubbleOutline
+                        "Reading" -> Icons.Rounded.MenuBook
+                        "Appearance" -> Icons.Rounded.Palette
+                        "Data" -> Icons.Rounded.Storage
+                        "Leaderboard" -> Icons.Rounded.Leaderboard
+                        "Help" -> Icons.Rounded.HelpOutline
+                        else -> Icons.Rounded.Info
+                    }, null) },
+                    supportingContent = { if(!enabled) Text("Sign in to access") },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) })
+            }
+            }
+        }
+        when(selected) {
+            "Account" -> item { AccountSettings(state,model) }
+            "Profile" -> item { IdentityPanel(state,model) }
+            "Reading" -> item { Text("Global reader defaults",style = MaterialTheme.typography.titleLarge);Spacer(Modifier.height(16.dp));GlobalReaderOptions(state,model);Spacer(Modifier.height(16.dp));Text("Individual manga can override each global setting.") }
+            "Appearance" -> item { AppearancePanel(state,model) }
+            "Data" -> item { DataPanel(state,model) }
+            "Help" -> item {
+                Text("Save titles to your library, then use Start reading or Resume on manga details. Reader settings can apply globally or to one manga.")
+                Text("Account library and history sync when signed in. Use Data to retry sync or import guest data.")
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                TextButton(onClick = { uriHandler.openUri("https://github.com/Wolfkid200444/comico-android/issues") }) { Text("Report an issue") }
+            }
+            "About" -> item {
+                Text("An independent Kotlin client for comico.moe, built with Jetpack Compose and Material Design 3.")
+                Text("Version ${BuildConfig.VERSION_NAME}")
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                TextButton(onClick = { uriHandler.openUri("https://github.com/Wolfkid200444/comico-android") }) { Text("Source code") }
+            }
+        }
+    }
     }
 }
 

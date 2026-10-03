@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Leaderboard
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Alignment
@@ -41,21 +42,36 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 
-private val destinations = listOf("Discover" to Icons.Rounded.Explore, "Search" to Icons.Rounded.Search, "Library" to Icons.Rounded.Bookmarks, "History" to Icons.Rounded.History, "Settings" to Icons.Rounded.Settings)
+private val destinations = listOf("Discover" to Icons.Rounded.Explore, "Search" to Icons.Rounded.Search, "Library" to Icons.Rounded.Bookmarks, "History" to Icons.Rounded.History, "Profile" to Icons.Rounded.Person)
 
 private fun unselectedDestinationIcon(name: String) = when(name) {
     "Search" -> Icons.Outlined.Search
     "Library" -> Icons.Outlined.Bookmarks
     "History" -> Icons.Outlined.History
     "Leaderboard" -> Icons.Outlined.Leaderboard
+    "Profile" -> Icons.Rounded.PersonOutline
     "Settings" -> Icons.Outlined.Settings
     else -> Icons.Outlined.Explore
 }
 
 @Composable
 fun ComicoApp(state: AppState, model: ReaderViewModel) {
+    val discussion by model.discussion.state.collectAsState()
+    if(discussion.target != null) DiscussionDialog(discussion, model.discussion, state.account.user != null)
     val screenState = rememberSaveableStateHolder()
-    BackHandler(state.selected != null || state.tab != "Discover") { if(state.selected != null) model.back() else model.tab(if(state.tab == "Leaderboard") "Settings" else "Discover") }
+    var settingsSection by rememberSaveable(state.tab) {
+        mutableStateOf(when(state.tab) { "Comments" -> "Comments"; "Edit profile" -> "Profile"; else -> "Menu" })
+    }
+    val navigateBack: () -> Unit = {
+        when {
+            state.selected != null -> model.back()
+            state.tab in listOf("Settings", "Comments", "Edit profile") && settingsSection != "Menu" -> settingsSection = "Menu"
+            state.tab == "Leaderboard" -> model.tab("Settings")
+            state.tab in listOf("Settings", "Comments", "Edit profile") -> model.tab("Profile")
+            else -> model.tab("Discover")
+        }
+    }
+    BackHandler(state.selected != null || state.tab != "Discover", onBack = navigateBack)
     if(state.reader != null) {
         ReaderScreen(state, model)
         return
@@ -69,16 +85,24 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                 Spacer(Modifier.height(24.dp))
                 Icon(Icons.AutoMirrored.Rounded.MenuBook, "Comico", tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(36.dp))
-                destinations.forEach { (name, icon) -> NavigationRailItem(selected = state.tab == name, onClick = { model.tab(name) }, icon = { Icon(if(state.tab == name) icon else unselectedDestinationIcon(name), null) }, label = { Text(name) }) }
+                destinations.forEach { (name, icon) -> NavigationRailItem(selected = (state.tab == name || (name == "Discover" && state.tab == "Feed") || (name == "Profile" && state.tab in listOf("Settings", "Comments", "Edit profile", "Leaderboard"))), onClick = { model.tab(name) }, icon = { Icon(if((state.tab == name || (name == "Discover" && state.tab == "Feed") || (name == "Profile" && state.tab in listOf("Settings", "Comments", "Edit profile", "Leaderboard")))) icon else unselectedDestinationIcon(name), null) }, alwaysShowLabel = state.appearance.alwaysShowNavLabels, label = { Text(name) }) }
             }
             Scaffold(
                 modifier = Modifier.weight(1f).nestedScroll(appBarScroll.nestedScrollConnection),
                 topBar = {
-                    if(state.selected != null) TopAppBar(title = { Text("Title details", style = MaterialTheme.typography.titleMedium) }, navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } })
-                    else TopAppBar(scrollBehavior = appBarScroll,colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background,scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer),navigationIcon = { if(state.tab == "Leaderboard") IconButton(onClick = { model.tab("Settings") }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack,"Back to settings") } },title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Image(painterResource(R.drawable.comico_logo), "Comico logo", Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)))
-                        Text("comico.moe", style = MaterialTheme.typography.titleLarge)
-                    } }, actions = { if(state.tab == "Library") IconButton(onClick = model::toggleLibrarySearch) { Icon(Icons.Rounded.Search, "Search your library") } else if(state.tab != "Search") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") } })
+                    if(state.selected != null) TopAppBar(title = {}, navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } })
+                    else TopAppBar(scrollBehavior = appBarScroll,colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background,scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer),navigationIcon = { if(state.tab in listOf("Feed", "Leaderboard", "Settings", "Comments", "Edit profile")) IconButton(onClick = navigateBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack,"Back") } },title = {
+                        if(state.tab == "Discover") Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Image(painterResource(R.drawable.comico_logo), "Comico logo", Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)))
+                            Text("comico.moe", style = MaterialTheme.typography.titleLarge)
+                        } else Text(
+                            if(state.tab in listOf("Settings", "Comments", "Edit profile")) {
+                                when(settingsSection) { "Menu" -> "Settings"; "Profile" -> "Identity and social links"; else -> settingsSection }
+                            } else if(state.tab == "Feed") state.feed?.label.orEmpty() else if(state.tab == "History") "Reading history" else state.tab,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }, actions = { if(state.tab == "Library") IconButton(onClick = model::toggleLibrarySearch) { Icon(Icons.Rounded.Search, "Search your library") } else if(state.tab != "Search") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") }; if(state.tab == "Profile") AppOverflowMenu(state, model) })
                 },
                 floatingActionButton = {
                     val progress = state.selected?.let { state.progress[it.id] }
@@ -92,17 +116,19 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                 },
                 bottomBar = {
                     if(!wide && state.selected == null) NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                        destinations.forEach { (name, icon) -> NavigationBarItem(selected = state.tab == name, onClick = { model.tab(name) }, icon = { Icon(if(state.tab == name) icon else unselectedDestinationIcon(name), null) }, label = { Text(name,maxLines = 1,style = MaterialTheme.typography.labelSmall) },colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer,selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,selectedTextColor = MaterialTheme.colorScheme.primary)) }
+                        destinations.forEach { (name, icon) -> NavigationBarItem(selected = (state.tab == name || (name == "Discover" && state.tab == "Feed") || (name == "Profile" && state.tab in listOf("Settings", "Comments", "Edit profile", "Leaderboard"))), onClick = { model.tab(name) }, icon = { Icon(if((state.tab == name || (name == "Discover" && state.tab == "Feed") || (name == "Profile" && state.tab in listOf("Settings", "Comments", "Edit profile", "Leaderboard")))) icon else unselectedDestinationIcon(name), null) }, alwaysShowLabel = state.appearance.alwaysShowNavLabels, label = { Text(name,maxLines = 1,style = MaterialTheme.typography.labelSmall) },colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer,selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,selectedTextColor = MaterialTheme.colorScheme.primary)) }
                     }
                 }
             ) { padding ->
                 Box(Modifier.padding(padding).fillMaxSize()) {
                     if(state.selected != null) DetailScreen(state,model) else screenState.SaveableStateProvider(state.tab) {
                         when(state.tab) {
-                            "Settings" -> SettingsScreen(state,model)
+                            "Settings", "Comments", "Edit profile" -> SettingsScreen(state,model,settingsSection) { settingsSection = it }
+                            "Profile" -> ProfileScreen(state,model)
                             "History" -> HistoryScreen(state,model)
                             "Leaderboard" -> LeaderboardScreen(state,model)
                             "Discover" -> DiscoverScreen(state,model)
+                            "Feed" -> DiscoverPageScreen(state,model)
                             "Library" -> CatalogScreen(state,filterLibrary(state.library,state.libraryQuery),model,library = true)
                             else -> CatalogScreen(state,state.catalog,model,library = false)
                         }
@@ -118,13 +144,10 @@ private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderView
     val libraryFocus = remember { FocusRequester() }
     var filtersOpen by remember { mutableStateOf(false) }
     if(filtersOpen) SearchFilterDialog(state,model) { filtersOpen = false }
-    LazyVerticalGrid(columns = GridCells.Adaptive(145.dp), contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    SyncRefreshBox(state, model, enabled = library) {
+    LazyVerticalGrid(modifier = Modifier.fillMaxSize(), columns = GridCells.Adaptive(145.dp), contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if(library) "Library" else "Search", style = MaterialTheme.typography.headlineLarge,modifier = Modifier.weight(1f))
-                    if(library) IconButton(onClick = model::toggleLibrarySearch) { Icon(Icons.Rounded.Search,"Search your library") }
-                }
                 Text(if(library) "Saved stories, ready when you are." else "A quiet place to discover, track and read manga, manhwa and webtoons from supported sources and scanlation groups.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -162,6 +185,7 @@ private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderView
         if(!library && !state.loading && state.error == null && state.offset < state.total) item(span = { GridItemSpan(maxLineSpan) }) {
             OutlinedButton(onClick = { model.loadCatalog(more = true) }, modifier = Modifier.fillMaxWidth()) { Text("Load more stories") }
         }
+    }
     }
 }
 
@@ -210,11 +234,11 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(manga.format.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Text(manga.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    manga.credits.forEach { credit ->
+                    manga.credits.groupBy { it.role.trim().lowercase() }.forEach { (role, credits) ->
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(if(credit.role.equals("artist", ignoreCase = true)) Icons.Rounded.Brush else Icons.Rounded.Edit,
+                            Icon(if(role == "artist") Icons.Rounded.Brush else Icons.Rounded.Edit,
                                 null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${credit.name} · ${credit.role.replaceFirstChar { it.uppercase() }}",
+                            Text("${credits.map { it.name }.distinct().joinToString(", ")} · ${role.replaceFirstChar { it.uppercase() }}",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -240,11 +264,18 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
                         Text(if(saved) "Saved" else "Save", style = MaterialTheme.typography.labelMedium)
                     }
                 }
+                TextButton(onClick = { model.discussion.open(DiscussionTarget(manga.id, manga.title)) }, modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Rounded.ChatBubbleOutline, null, Modifier.size(24.dp))
+                        Text("Comments", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
                 TextButton(onClick = { readerSettings = true }, modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Rounded.Tune, null, Modifier.size(24.dp))
-                        Text("Reader Settings", style = MaterialTheme.typography.labelMedium)
+                        Text("Reader", style = MaterialTheme.typography.labelMedium)
                     }
                 }
                 TextButton(onClick = { webVisible = true }, modifier = Modifier.weight(1f),
@@ -285,6 +316,9 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
                         if(chapter.title.isNotBlank()) Text(chapter.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(chapter.group, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    IconButton(onClick = { model.discussion.open(DiscussionTarget(chapter.id, "${manga.title} · Chapter ${chapter.number}", chapter = true)) }) {
+                        Icon(Icons.Rounded.ChatBubbleOutline, "Comments for chapter ${chapter.number}")
+                    }
                     Icon(if(chapter.external.isNotEmpty()) Icons.AutoMirrored.Rounded.OpenInNew else Icons.Rounded.ChevronRight, "Read chapter ${chapter.number}", tint = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -294,6 +328,24 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
         if(state.chapterError != null) item { MessageCard(Icons.Rounded.CloudOff, "Couldn't load chapters", state.chapterError) { model.loadChapters() } }
         if(!state.chapterLoading && state.chapterError == null && state.chapters.isEmpty()) item { MessageCard(Icons.AutoMirrored.Rounded.MenuBook, "No chapters in this language", "Choose another language to check available translations.") }
         if(!state.chapterLoading && state.chapterOffset < state.chapterTotal) item { OutlinedButton(onClick = { model.loadChapters(true) }, Modifier.fillMaxWidth()) { Text("Load more chapters") } }
+    }
+}
+
+@Composable
+private fun AppOverflowMenu(state: AppState, model: ReaderViewModel) {
+    var expanded by remember { mutableStateOf(false) }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    Box {
+        IconButton(onClick = { expanded = true }) { Icon(Icons.Rounded.MoreVert, "More options") }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text("Settings") }, onClick = { expanded = false; model.tab("Settings") })
+            DropdownMenuItem(text = { Text("View on Comico.moe") }, onClick = {
+                expanded = false
+                val username = state.account.user?.username
+                val url = if(state.tab == "Profile" && !username.isNullOrBlank()) "$BASE_URL/u/${android.net.Uri.encode(username)}" else BASE_URL
+                runCatching { uriHandler.openUri(url) }
+            })
+        }
     }
 }
 
