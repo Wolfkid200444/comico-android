@@ -1,0 +1,95 @@
+app/src/main/java/moe/comico/reader/AccountData.kt
+  s_0976e259204c45::t_8d8dbe7e62ee21 30-43
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  s_0976e259204c45::t_17d546488e0dea 26-27,39-40,56,63,77,79-109,112-117,119-130
+app/src/main/java/moe/comico/reader/AppearanceSettings.kt
+  s_0976e259204c45::t_c7b1b8f44aa380 1-115
+app/src/main/java/moe/comico/reader/AppearanceToggle.kt
+  s_0976e259204c45::t_017abe01a6448d 1-21
+app/src/main/java/moe/comico/reader/BadgeArtwork.kt
+  s_0976e259204c45::t_8c28dc4f9575c6 1-69
+app/src/main/java/moe/comico/reader/BadgeButton.kt
+  s_0976e259204c45::t_4a5d6a8d376d36 1-36
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_a8d19cd7334248::t_370825976b3551 44-49,67-84,133-155,157-158,160
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_0976e259204c45::t_f015c023e4a897 31,45,52,59-60,62-74,88,93-105,119,126-127,131,147-148,189,237,239,241,267-273,278,319-321,334-351
+app/src/main/java/moe/comico/reader/CommentsScreen.kt
+  s_a8d19cd7334248::t_ebf6449b958b9d 1-51
+app/src/main/java/moe/comico/reader/DiscoverPageScreen.kt
+  s_0976e259204c45::t_61b46fe65ce4fb 1-48
+app/src/main/java/moe/comico/reader/DiscoverScreen.kt
+  s_0976e259204c45::t_5210eaa59d8935 10,23,35-36,39-42,45,53,56,70-74,88,97
+app/src/main/java/moe/comico/reader/Discussion.kt
+  s_a8d19cd7334248::t_ccc2b576e66098 1-107
+app/src/main/java/moe/comico/reader/DiscussionScreen.kt
+  s_a8d19cd7334248::t_040011d88a2f7b 1-147
+app/src/main/java/moe/comico/reader/IdentityPanel.kt
+  s_0976e259204c45::t_6866ac9686ada9 1-101
+app/src/main/java/moe/comico/reader/LevelProgress.kt
+  s_0976e259204c45::t_cf95189a7b131e 1-16
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  s_0976e259204c45::t_461f59cea7013c 22-24,33-34,47,63-67
+app/src/main/java/moe/comico/reader/ProfileEdit.kt
+  s_0976e259204c45::t_b36c4a2bcbcbbe 1-46
+app/src/main/java/moe/comico/reader/ProfileScreen.kt
+  s_0976e259204c45::t_7772392ae960fb 1-141
+app/src/main/java/moe/comico/reader/ReaderScreen.kt
+  s_0976e259204c45::t_69e38a69eb7a90 66-68
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_0976e259204c45::t_3613b2fa65cfa7 17,21,31,43,53,69-75,168-174,302,310-334,433-434,436,443,447-455
+app/src/main/java/moe/comico/reader/SettingsTooltip.kt
+  s_0976e259204c45::t_306fdd0fceae87 1-13
+app/src/main/java/moe/comico/reader/SyncRefreshBox.kt
+  s_0976e259204c45::t_4ef209c2003404 1-18
+app/src/main/java/moe/comico/reader/ThemePalettes.kt
+  s_0976e259204c45::t_7b99800462e148 1-27
+app/src/main/res/drawable/badge_discord.xml
+  s_0976e259204c45::t_25f777092d8690 1
+app/src/main/res/drawable/badge_early.xml
+  s_0976e259204c45::t_f874ac920f2c44 1-276
+app/src/main/res/drawable/badge_supporter.xml
+  s_0976e259204c45::t_4839613b51f0ab 1-349
+app/src/test/java/moe/comico/reader/AppearanceOptionsTest.kt
+  s_0976e259204c45::t_7a512834dae5c8 1-25
+app/src/test/java/moe/comico/reader/BadgeArtworkTest.kt
+  s_0976e259204c45::t_f62d68e88b4e68 1-18
+app/src/test/java/moe/comico/reader/BadgeCatalogProbeTest.kt
+  s_0976e259204c45::t_fb1ea838d82fa2 1-13
+app/src/test/java/moe/comico/reader/CommentContextTest.kt
+  s_0976e259204c45::t_e5015b3593153b 1-18
+app/src/test/java/moe/comico/reader/DiscoverPaginationTest.kt
+  s_0976e259204c45::t_ab307c38a187b8 1-11
+app/src/test/java/moe/comico/reader/DiscussionTest.kt
+  s_0976e259204c45::t_3980fd5ac4e45b 1-32
+app/src/test/java/moe/comico/reader/LevelProgressTest.kt
+  s_0976e259204c45::t_d6b2cbe205aff8 1-15
+app/src/test/java/moe/comico/reader/ProfileContractProbeTest.kt
+  s_0976e259204c45::t_238ae6d7242a04 1-27
+app/src/test/java/moe/comico/reader/PublicProfileTest.kt
+  s_0976e259204c45::t_5712f3795993b9 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "82d2db8e445a8e7411e3de1096ba04a94130e527",
+  "prompts": {},
+  "sessions": {
+    "s_0976e259204c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0feea-f311-7631-b450-82e71f2f3495",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_a8d19cd7334248": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ffe0-93eb-7191-913a-5f466c3db792",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
