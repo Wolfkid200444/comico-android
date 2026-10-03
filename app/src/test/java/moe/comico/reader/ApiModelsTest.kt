@@ -12,6 +12,12 @@ class ApiModelsTest {
         assertEquals("", manga.description)
         assertEquals("safe", manga.rating)
     }
+    @Test fun authorAndArtistCreditsSurviveSavedTitleSerialization() {
+        val manga = JSONObject("""{"id":"id","title":"Story","authors":[{"name":"Writer","role":"author"},{"name":"Illustrator","role":"artist"}]}""").manga()
+        assertEquals(listOf(MangaCredit("Writer", "author"), MangaCredit("Illustrator", "artist")), manga.credits)
+        assertEquals(manga, JSONObject(manga.toJson().toString()).manga())
+        assertTrue(JSONObject("""{"id":"id","title":"Story"}""").manga().credits.isEmpty())
+    }
     @Test fun nullExternalLinkStaysEmpty() {
         val chapter = JSONObject("""{"id":"id","number":"1.5","externalUrl":null}""").chapter()
         assertEquals("", chapter.external)

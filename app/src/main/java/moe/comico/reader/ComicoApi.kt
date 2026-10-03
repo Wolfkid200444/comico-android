@@ -13,11 +13,15 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 const val BASE_URL = "https://comico.moe"
-data class Manga(val id: String, val title: String, val cover: String, val status: String, val format: String, val tags: List<String>, val description: String = "", val rating: String = "safe")
+data class Manga(val id: String, val title: String, val cover: String, val status: String, val format: String, val tags: List<String>, val description: String = "", val rating: String = "safe", val credits: List<MangaCredit> = emptyList())
+data class MangaCredit(val name: String, val role: String)
 data class Chapter(val id: String, val number: String, val title: String, val language: String, val group: String, val external: String)
 data class PageResult<T>(val items: List<T>, val total: Int)
 
-fun JSONObject.manga() = Manga(getString("id"), getString("title"), absoluteUrl(optString("coverUrl")), optString("status"), optString("format"), optJSONArray("tags").objects().map { it.optString("name") }, optString("description"), optString("contentRating", "safe"))
+fun JSONObject.manga() = Manga(getString("id"), getString("title"), absoluteUrl(optString("coverUrl")), optString("status"), optString("format"), optJSONArray("tags").objects().map { it.optString("name") }, optString("description"), optString("contentRating", "safe"), optJSONArray("authors").objects().mapNotNull {
+    val name = it.optString("name").trim().takeUnless { name -> name.isEmpty() || name == "null" }
+    name?.let { name -> MangaCredit(name, it.optString("role", "author")) }
+})
 fun JSONObject.chapter() = Chapter(getString("id"), optString("number", "?"), optString("title"), optString("language"), optString("scanlationGroup", "Unknown group"), optString("externalUrl").takeUnless { it == "null" }.orEmpty())
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 fun absoluteUrl(value: String): String = if (value.startsWith("/")) BASE_URL + value else value
@@ -94,7 +98,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
     }
     suspend fun clearHistory() { requestText("$baseUrl/api/history",method = "DELETE") }
     suspend fun leaderboard() = JSONArray(requestText("$baseUrl/api/stats/levels?limit=50")).objects().map { it.leaderboardEntry() }
-    suspend fun followedUpdates() = get("/api/library/updates",mapOf("limit" to "50")).getJSONArray("items").objects().map { it.getJSONObject("manga").manga() }.distinctBy { it.id }
+    suspend fun followedUpdates() = get("/api/library/updates",mapOf("limit" to "50")).getJSONArray("items").objects().map { it.followedUpdateManga() }.distinctBy { it.id }
     suspend fun discover(feed: DiscoverFeed, filters: SearchFilters): List<Manga> {
         val url = "$baseUrl/api/stats/titles".toHttpUrl().newBuilder().addQueryParameter("sort",feed.sort).addQueryParameter("limit","50")
         filters.allowedRatings().forEach { url.addQueryParameter("contentRating",it) }

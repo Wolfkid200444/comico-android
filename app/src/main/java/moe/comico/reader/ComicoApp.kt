@@ -81,7 +81,14 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                     } }, actions = { if(state.tab == "Library") IconButton(onClick = model::toggleLibrarySearch) { Icon(Icons.Rounded.Search, "Search your library") } else if(state.tab != "Search") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") } })
                 },
                 floatingActionButton = {
-                    if(state.selected != null && state.firstChapter != null) ExtendedFloatingActionButton(onClick = model::startReading,icon = { Icon(Icons.Rounded.PlayArrow,null) },text = { Text("Start reading") })
+                    val progress = state.selected?.let { state.progress[it.id] }
+                    if(state.selected != null && (progress != null || state.firstChapter != null)) {
+                        ExtendedFloatingActionButton(
+                            onClick = { if(progress != null) model.read(progress) else model.startReading() },
+                            icon = { Icon(Icons.Rounded.PlayArrow, null) },
+                            text = { Text(if(progress != null) "Resume" else "Start reading") }
+                        )
+                    }
                 },
                 bottomBar = {
                     if(!wide && state.selected == null) NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
@@ -192,9 +199,10 @@ fun MessageCard(icon: ImageVector, title: String, body: String, retry: (() -> Un
 private fun DetailScreen(state: AppState, model: ReaderViewModel) {
     val manga = state.selected ?: return
     val saved = state.library.any { it.id == manga.id }
-    val progress = state.progress[manga.id]
+    var webVisible by remember(manga.id) { mutableStateOf(false) }
     var readerSettings by remember { mutableStateOf(false) }
     if(readerSettings) ReaderSettingsDialog(state, model) { readerSettings = false }
+    if(webVisible) MangaWebDialog(manga, onDismiss = { webVisible = false })
     LazyColumn(contentPadding = PaddingValues(start = 20.dp,end = 20.dp,top = 20.dp,bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -202,13 +210,52 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(manga.format.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Text(manga.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text(manga.status.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    FilledTonalButton(onClick = { model.bookmark(manga) },enabled = !state.account.loading && !state.syncLoading) { Icon(if(saved) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if(saved) "Saved" else "Save") }
+                    manga.credits.forEach { credit ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if(credit.role.equals("artist", ignoreCase = true)) Icons.Rounded.Brush else Icons.Rounded.Edit,
+                                null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${credit.name} · ${credit.role.replaceFirstChar { it.uppercase() }}",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(when(manga.status.lowercase()) {
+                            "completed" -> Icons.Rounded.CheckCircle
+                            "hiatus" -> Icons.Rounded.PauseCircle
+                            "cancelled" -> Icons.Rounded.Cancel
+                            else -> Icons.Rounded.Schedule
+                        }, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(manga.status.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
                 }
             }
         }
-        item { OutlinedButton(onClick = { readerSettings = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Rounded.Tune, null); Spacer(Modifier.width(8.dp)); Text("Reader settings for this manga") } }
-        if(progress != null) item { Button(onClick = { model.read(progress) }, Modifier.fillMaxWidth()) { Icon(Icons.Rounded.PlayArrow, null); Text("Continue chapter ${progress.number}") } }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { model.bookmark(manga) }, enabled = !state.account.loading && !state.syncLoading,
+                    modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(if(saved) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, null, Modifier.size(24.dp))
+                        Text(if(saved) "Saved" else "Save", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                TextButton(onClick = { readerSettings = true }, modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Rounded.Tune, null, Modifier.size(24.dp))
+                        Text("Reader Settings", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                TextButton(onClick = { webVisible = true }, modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, Modifier.size(24.dp))
+                        Text("Open on Web", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
         item { Text(manga.tags.take(6).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
         if(manga.description.isNotBlank()) item {
             var expanded by remember(manga.id) { mutableStateOf(false) }
@@ -247,6 +294,42 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
         if(state.chapterError != null) item { MessageCard(Icons.Rounded.CloudOff, "Couldn't load chapters", state.chapterError) { model.loadChapters() } }
         if(!state.chapterLoading && state.chapterError == null && state.chapters.isEmpty()) item { MessageCard(Icons.AutoMirrored.Rounded.MenuBook, "No chapters in this language", "Choose another language to check available translations.") }
         if(!state.chapterLoading && state.chapterOffset < state.chapterTotal) item { OutlinedButton(onClick = { model.loadChapters(true) }, Modifier.fillMaxWidth()) { Text("Load more chapters") } }
+    }
+}
+
+@Composable
+private fun MangaWebDialog(manga: Manga, onDismiss: () -> Unit) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    var webView by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { webView?.stopLoading(); webView?.destroy() }
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            Column {
+                TopAppBar(title = { Text(manga.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, "Close website") } })
+                androidx.compose.ui.viewinterop.AndroidView(modifier = Modifier.weight(1f).fillMaxWidth(), factory = { context ->
+                    android.webkit.WebView(context).apply {
+                        webView = this
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: android.webkit.WebView, request: android.webkit.WebResourceRequest): Boolean {
+                                if(request.url.scheme == "https" && request.url.host == "comico.moe") return false
+                                if(request.url.scheme in listOf("https", "http")) runCatching { uriHandler.openUri(request.url.toString()) }
+                                return true
+                            }
+                        }
+                        loadUrl("$BASE_URL/manga/${android.net.Uri.encode(manga.id)}")
+                    }
+                })
+            }
+        }
     }
 }
 

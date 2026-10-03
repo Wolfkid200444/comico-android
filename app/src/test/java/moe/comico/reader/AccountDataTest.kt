@@ -25,6 +25,19 @@ class AccountDataTest {
         val localOnly = cached.copy(pageCount = 0)
         assertEquals(listOf(localOnly),accountHistorySnapshot(emptyList(),emptyList(),emptyList(),listOf(localOnly)))
     }
+    @Test fun parsesWebsiteHistoryWithChapterIdOutsideChapterSummary() {
+        val json = JSONObject().put("manga",manga.toJson()).put("chapterId","c1").put("chapter",JSONObject().put("number","1").put("title",""))
+            .put("page",3).put("pageCount",10).put("readAt","2026-10-02T10:00:00Z")
+        assertEquals("c1",json.historyEntry().chapter.id)
+        assertEquals("m1",json.historyEntry().manga.id)
+        assertEquals(3,json.historyEntry().page)
+    }
+    @Test fun parsesFlatWebsiteFollowedUpdates() {
+        val json = JSONObject().put("mangaId","m1").put("mangaTitle","Story").put("coverUrl","/cover.jpg").put("chapterId","c1")
+        assertEquals("m1",json.followedUpdateManga().id)
+        assertEquals("Story",json.followedUpdateManga().title)
+        assertEquals("https://comico.moe/cover.jpg",json.followedUpdateManga().cover)
+    }
     @Test fun accountCachesAndGuestDataUseSeparateKeys() {
         for(key in listOf("library","history","progress","readerPage:c1","pending:bookmarks","pending:progress")) {
             assertEquals(key,accountStorageKey(key,null))
