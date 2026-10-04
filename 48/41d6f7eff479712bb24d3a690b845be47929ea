@@ -1,0 +1,115 @@
+app/src/main/AndroidManifest.xml
+  s_0976e259204c45::t_34c65eb01f9214 3,9
+app/src/main/java/moe/comico/reader/AccountData.kt
+  s_0976e259204c45::t_bc57b4867e779b 16,45-57
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  s_123c162abe6b8c::t_18c95f90d8ccac 79-82,87,90,105-106,123,140,153,158
+app/src/main/java/moe/comico/reader/ChapterActions.kt
+  s_123c162abe6b8c::t_f8c9651a0b26c4 1-19
+app/src/main/java/moe/comico/reader/ChapterFilters.kt
+  s_4607ae7332d14a::t_193febc5f56286 1-75
+app/src/main/java/moe/comico/reader/CollectionManager.kt
+  s_0976e259204c45::t_1716e269d937ad 1-46
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  s_0976e259204c45::t_d650b229b4cec3 18,25,59-76,104,118-119,122-134,141-144,155
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  s_123c162abe6b8c::t_e91608d41eb755 6,61-65,109-126,144-148,155,157-158,161,169,175,178,181,192-193,199-202,204,246-258,342-410,413-417,419,423-427
+app/src/main/java/moe/comico/reader/Discussion.kt
+  s_123c162abe6b8c::t_36b4e0ad9ad88c 40-41,61
+app/src/main/java/moe/comico/reader/DownloadControls.kt
+  s_0976e259204c45::t_088854d6d9a588 1-96
+app/src/main/java/moe/comico/reader/LibraryCollection.kt
+  s_6d4e52d6a08b16::t_260acf911df910 1-25
+app/src/main/java/moe/comico/reader/LibraryDialogs.kt
+  s_0976e259204c45::t_45a3916c4b72f5 1-176
+app/src/main/java/moe/comico/reader/LibraryOptions.kt
+  s_6d4e52d6a08b16::t_ee23c341d25313 1-70
+app/src/main/java/moe/comico/reader/LibraryScreen.kt
+  s_6d4e52d6a08b16::t_f1d21ae020bc6e 1-224
+app/src/main/java/moe/comico/reader/OfflineChapters.kt
+  s_123c162abe6b8c::t_64bd261ef4a48a 1-142
+app/src/main/java/moe/comico/reader/ReaderChrome.kt
+  s_0976e259204c45::t_cd1d27e54f9dac 1-165
+app/src/main/java/moe/comico/reader/ReaderPreferences.kt
+  s_4607ae7332d14a::t_5d5d246d25b847 31-32,34-38,40,43,50-51
+app/src/main/java/moe/comico/reader/ReaderScreen.kt
+  s_d2997e702cff76::t_79293e06dda132 5-8,54-58,61,66-71,129-138,156
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  s_0976e259204c45::t_5ee0a1764c82ea 4,9-11,21-23,36-37,39-42,59,63,73,76-118,137-139,151-339,345,360-366,380-413,415,418-421,425-433,435,445,499,508-524,562,573,575,620-624,626-629,631,645,671,687,702-704,727-728,735,738,749,754,764,810
+app/src/main/java/moe/comico/reader/SettingsTooltip.kt
+  s_0976e259204c45::t_7060f56387e395 9-10
+app/src/main/java/moe/comico/reader/StorageSettings.kt
+  s_123c162abe6b8c::t_76b4865a0056a2 1-117
+app/src/test/java/moe/comico/reader/ChapterActionsTest.kt
+  s_123c162abe6b8c::t_14756e408634da 1-43
+app/src/test/java/moe/comico/reader/ChapterFiltersTest.kt
+  s_4607ae7332d14a::t_584c2db6c7acd1 1-53
+app/src/test/java/moe/comico/reader/CollectionContractProbeTest.kt
+  s_0976e259204c45::t_911ec757861bbd 1-21
+app/src/test/java/moe/comico/reader/DownloadContractProbeTest.kt
+  s_0976e259204c45::t_93c6a3296b8192 1-46
+app/src/test/java/moe/comico/reader/LibraryOptionsTest.kt
+  s_6d4e52d6a08b16::t_e6240d0e12b3cd 1-59
+app/src/test/java/moe/comico/reader/LibraryPaginationTest.kt
+  s_d2997e702cff76::t_001b82d558f95c 1-29
+app/src/test/java/moe/comico/reader/LocalHistorySyncTest.kt
+  s_0976e259204c45::t_dcf325821d760b 1-25
+app/src/test/java/moe/comico/reader/OfflineChaptersTest.kt
+  s_0976e259204c45::t_df69429dd4e25c 1-79
+app/src/test/java/moe/comico/reader/PendingProgressTest.kt
+  s_0976e259204c45::t_83473ec8618c10 1-22
+app/src/test/java/moe/comico/reader/ReaderChromeTest.kt
+  s_d2997e702cff76::t_1b1f9c0176859f 1-23
+app/src/test/java/moe/comico/reader/StorageSettingsTest.kt
+  s_123c162abe6b8c::t_314d3e9fbc25e1 1-31
+app/src/test/java/moe/comico/reader/WebsiteCollectionsProbeTest.kt
+  s_0976e259204c45::t_a734e774fb01e1 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4841d6f7eff479712bb24d3a690b845be47929ea",
+  "prompts": {},
+  "sessions": {
+    "s_0976e259204c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0feea-f311-7631-b450-82e71f2f3495",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_123c162abe6b8c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a104ca-a1e6-7d61-8972-0a3f55c37aab",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_4607ae7332d14a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10370-c99a-79d2-b238-290d216db83c",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_6d4e52d6a08b16": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a103f5-ee63-7010-b6d2-a02203ce4760",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_d2997e702cff76": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10361-3796-7833-b214-b813cd13185c",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
