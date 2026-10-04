@@ -14,7 +14,7 @@ If no release is available yet, check the [APK build workflow](https://github.co
 To install from a computer with Android platform tools and USB debugging enabled:
 
 ```sh
-adb install -r comico-android-0.6.1.apk
+adb install -r comico-android-0.7.0.apk
 ```
 
 Replace the filename with the APK you downloaded. Future builds use the same signing key and application ID, so installing a newer version keeps your local library. If an earlier build used a different signing key, Android requires uninstalling it first, which removes its local data.
@@ -33,7 +33,13 @@ Automated builds are debug APKs signed with the public test key in `signing/debu
 - Use the website’s dark colors by default, or choose light, dark, or system appearance, with optional Android wallpaper colors.
 - Read chapters as native images with long strip, single page, or double page layouts, pinch zoom, and chapter navigation. Publisher-only chapters link to the original reader.
 
-The catalog defaults to Comico's `safe` content rating; use the content filter to change it. Account sign-in and registration are available in Settings. Library and history sync are available. Offline chapter downloads are not implemented.
+The catalog defaults to Comico's `safe` content rating; use the content filter to change it. Account sign-in and registration are available in Settings. Library and history sync are available. Download chapters for offline reading or import chapter ZIPs. Downloads use private app storage by default; Settings → Data and storage lets you choose another folder, view usage, and clear temporary caches without removing downloaded ZIPs.
+
+## Offline reading and chapter actions
+
+Chapter rows keep comments beside the download action. Long-press a row to select chapters, mark them read or unread on this device, or download a selection. Select all includes chapters beyond the first page. Download all respects the selected source, language, and group, skips saved chapters, and uses Comico's server-enforced account limits. Visible chapters show a comment count when available, or a dot when comments exist without a reported total.
+
+Without an internet connection, Discover opens Downloads and online browsing/sync requests pause. Downloaded chapters open locally. After restarting offline, account-owned data remains scoped to its account; use Downloads → Open chapter ZIP to explicitly open a saved archive if your account is unavailable.
 
 ## Search filters
 
@@ -47,6 +53,12 @@ Tap **Filters** in Discover or Search to choose:
 - Up to 20 Comick tags from Comico's live tag list.
 
 Search the tag list by name, select tags, then tap **Apply filters**. **Reset** restores the defaults in the dialog; tap Apply to use them. Filters persist on this device and reset pagination when changed. You can search with a title, tags, or both. Tag and title searches use Comico's Comick-backed search, matching its website.
+
+## Chapter sources and groups
+
+Manga details offers a Source selector beside the chapter controls, showing each provider’s reported chapter count. Choose MangaDex, ComickLive, or another available provider to reload that source’s chapter list. The Group selector filters scanlation groups within the selected source and language; All groups restores the complete list.
+
+Opening Group loads chapter metadata across all pages once for the selected source and language, then filters locally. Changing source or language resets the chapter metadata cache. Group preferences are remembered per manga, source, and language. The reader’s previous/next chapter arrows stay within the selected group.
 
 ## Reader settings
 
@@ -65,7 +77,7 @@ Auto mode chooses long strip for webtoons, manhwa, and manhua, and single pages 
 
 Source choices come from the live API. They can include MangaDex, ComickLive, Atsu, and other sources, depending on the manga and chapter. Global source preferences are populated as you open titles. An unavailable preferred source falls back to Auto, with a notice in the reader. The bottom reader controls show the source and method actually used.
 
-Choose horizontal swipe or vertical scroll for single pages and double-page spreads. Long-strip mode always scrolls. Pinch or double-tap to zoom, tap a page to hide controls, and use the page slider to jump. Reading position, global settings, and individual manga overrides persist on this device.
+Choose horizontal swipe or vertical scroll for single pages and double-page spreads. Long-strip mode always scrolls. The reader opens in full screen with a small page counter. Tap the center to show translucent controls. Tap the chapter title to browse chapters, use the arrows beside the page slider to move between chapters, and open reader settings from the bottom controls. Controls respect system navigation insets, including three-button navigation. Pinch or double-tap to zoom. Reading position, global settings, and individual manga overrides persist on this device.
 
 The native reader resolves the same public access-token and read-session endpoints as Comico's website. Method 3 includes direct resolvers for MangaDex, ComickLive, Atsu, Manganato, MangaBall, and XComic. Other providers use server-resolved images through Method 1 or Method 2. Source availability and server failures can affect reading. Protected scrambled image formats are not supported; the reader prompts you to choose another source instead of displaying scrambled pages.
 
@@ -77,15 +89,15 @@ The app icon uses the supplied comico.moe logo.
 
 Open **Settings → Account** to sign in with your email or username, create an account, or sign out. Registration may require email verification before signing in. Passwords are not saved. Session cookies are encrypted with Android Keystore and sent only to comico.moe over HTTPS.
 
-Signing in loads your account library and server-side reading history. Saving or removing a title updates your account library. Native chapter reading sends chapter, page, page count, and completion progress to the same endpoint used by the website. Offline changes are queued for that account and retried when you open Library or History, resume reading, or pull down to refresh Library, History, or Settings → Data. Sync errors remain visible.
+Signing in loads your account library and server-side reading history. Saving or removing a title updates your account library. Native chapter reading sends chapter, page, page count, and completion progress to the same endpoint used by the website. Offline changes are queued for that account and retried when you open Library or History, resume reading, or pull down to refresh Library, History, or Settings → Data and storage. Sync errors remain visible.
 
-Each account has its own cache and pending changes. Signing out restores the guest library and history. To add guest data to an account, use **Settings → Data → Add guest library and history to this account**. This imports guest data without deleting the guest copy. Clearing account history clears it on both the website and this device. Reader preferences remain local.
+Each account has its own cache and pending changes. Signing out restores the guest library and history. To add guest data to an account, use **Settings → Data and storage → Add guest library and history to this account**. This imports guest data without deleting the guest copy. Clearing account history clears it on both the website and this device. Reader preferences remain local.
 
 Bottom navigation is **Discover → Search → Library → History → Profile**. The three-dot menu on Profile opens Settings and the website. Profile shows your avatar, banner, badges, reading stats, and experience progress. Pull down to refresh.
 
-Settings uses a list of Account, Identity and social links, Comments, Reading, Appearance, Data, Leaderboard, Help, and About pages. Identity supports avatar and banner URLs, Gravatar, and up to five validated social links. Appearance offers multiple palettes, Android dynamic colors, pure black dark mode, date formats, relative dates, and navigation labels. Data includes guest import, JSON export, history clearing, and pull-to-sync.
+Settings uses a list of Account, Identity and social links, Comments, Reading, Appearance, Downloads, Data and storage, Leaderboard, Help, and About pages. Identity supports avatar and banner URLs, Gravatar, and up to five validated social links. Appearance offers multiple palettes, Android dynamic colors, pure black dark mode, date formats, relative dates, and navigation labels. Data and storage includes guest import, JSON export, history clearing, download locations, storage usage, cache clearing, and pull-to-sync.
 
-Library’s header search filters saved titles, including synchronized account titles. History entries open manga details; use Resume to continue reading. Settings → Leaderboard shows the website’s top 50 accounts by experience.
+Library’s header search filters saved titles, including synchronized account titles. Collection tabs organize your library; use the menu to create, rename, reorder, or delete local collections and open a random entry. The bottom filter sheet includes Filter, Sort, and Display controls, with multiple grid and list modes. Tap the selected sort again to reverse its direction. History entries open manga details; use Resume to continue reading. Settings → Leaderboard shows the website’s top 50 accounts by experience.
 
 Manga details has a Comments action beside Save. Chapter rows and the reader also have comment buttons, opening separate chapter discussions. Signed-in users can post Markdown and upload images, with automatic inline previews. The composer includes a formatting guide and comment policy. Pull down to refresh discussions.
 

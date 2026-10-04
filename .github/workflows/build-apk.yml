@@ -116,4 +116,7 @@ jobs:
 
           See the README for installation and build instructions. The .sha256 file contains the APK checksum.
           NOTES
+          if [[ -f "release-notes/${RELEASE_TAG}.md" ]]; then
+            cp "release-notes/${RELEASE_TAG}.md" "$RUNNER_TEMP/release-notes.md"
+          fi
           gh release create "$RELEASE_TAG" dist/* --target "$RELEASE_SHA" --title "Comico Android $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

@@ -2,6 +2,10 @@
 package moe.comico.reader
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -47,54 +51,24 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
     val mode = preferences.modeFor(state.selected?.format.orEmpty())
     val context = LocalContext.current
     var settings by remember { mutableStateOf(false) }
-    var controls by remember { mutableStateOf(true) }
-    var pageJump by remember { mutableStateOf<Int?>(null) }
+    var controls by rememberSaveable(chapter.id) { mutableStateOf(false) }
+    var chapterPicker by rememberSaveable { mutableStateOf(false) }
+    val discussion by model.discussion.state.collectAsState()
+    ReaderSystemBars(show = controls || settings || chapterPicker || discussion.target != null)
+    var pageJump by remember(chapter.id) { mutableStateOf<Int?>(null) }
     BackHandler { model.back() }
     if(settings) ReaderSettingsDialog(state,model) { settings = false }
+    if(chapterPicker) ReaderChapterPicker(state, model, onDismiss = { chapterPicker = false })
     fun openBrowser(target: String) {
         val uri = Uri.parse(target)
         if(uri.scheme in listOf("https","http")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,uri)) }
     }
-    val colors = MaterialTheme.colorScheme
-    Scaffold(containerColor = Color(0xFF101014), contentColor = Color.White, topBar = {
-        if(controls) TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.surface),title = {
-            Column {
-                Text("Chapter ${chapter.number}",style = MaterialTheme.typography.titleMedium)
-                Text(state.selected?.title.orEmpty(), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        },navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack,"Back to chapters") } },actions = {
-            IconButton(onClick = { model.discussion.open(DiscussionTarget(chapter.id, "${state.selected?.title.orEmpty()} · Chapter ${chapter.number}", chapter = true)) }) {
-                Icon(Icons.Rounded.ChatBubbleOutline, "Chapter comments")
-            }
-            IconButton(onClick = model::loadReader,enabled = !reader.loading) { Icon(Icons.Rounded.Refresh,"Reload chapter images") }
-            IconButton(onClick = { settings = true }) { Icon(Icons.Rounded.Tune,"Reader settings") }
-        })
-    },bottomBar = {
-        if(controls && reader.session != null) Surface(color = colors.surface) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { pageJump = (reader.page - if(mode == ReadingMode.DOUBLE) 2 else 1).coerceAtLeast(0) },enabled = reader.page > 0) { Icon(if(usesVerticalScrolling(mode,preferences.navigation)) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.ChevronLeft,"Previous page") }
-                    Text("${reader.page + 1} / ${reader.session.pages.size}",Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                    Text(mode.label, style = MaterialTheme.typography.labelSmall)
-                    IconButton(onClick = { pageJump = (reader.page + if(mode == ReadingMode.DOUBLE) 2 else 1).coerceAtMost(reader.session.pages.lastIndex) },enabled = reader.page < reader.session.pages.lastIndex) { Icon(if(usesVerticalScrolling(mode,preferences.navigation)) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.ChevronRight,"Next page") }
-                }
-                if(reader.session.pages.size > 1) {
-                    var slider by remember(reader.page) { mutableFloatStateOf(reader.page.toFloat()) }
-                    Slider(value = slider, onValueChange = { slider = it }, onValueChangeFinished = { pageJump = slider.roundToInt() },valueRange = 0f..reader.session.pages.lastIndex.toFloat())
-                }
-                Text("${reader.session.source} · ${reader.session.method.label}",style = MaterialTheme.typography.labelSmall,color = colors.onSurfaceVariant)
-                if(reader.session.attribution.isNotBlank()) Text(reader.session.attribution,style = MaterialTheme.typography.labelSmall,color = colors.onSurfaceVariant,maxLines = 1,overflow = TextOverflow.Ellipsis)
-                val current = state.chapters.indexOfFirst { it.id == chapter.id }
-                Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceBetween) {
-                    val previous = reader.previous ?: if(current >= 0) state.chapters.getOrNull(current + 1) else null
-                    val next = reader.next ?: if(current > 0) state.chapters.getOrNull(current - 1) else null
-                    TextButton(onClick = { previous?.let(model::read) },enabled = previous != null) { Text("Previous chapter") }
-                    TextButton(onClick = { next?.let(model::read) },enabled = next != null) { Text("Next chapter") }
-                }
-            }
-        }
-    }) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFF101014), contentColor = Color.White) {
+        Box(Modifier.fillMaxSize().pointerInput(chapter.id) {
+            detectTapGestures(onTap = { position ->
+                if(position.x in size.width * .25f..size.width * .75f) controls = !controls
+            })
+        }) {
             when {
                 reader.loading -> Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Text("Loading chapter images…") }
                 reader.session != null -> {
@@ -152,7 +126,16 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
                     OutlinedButton(onClick = { settings = true }) { Text("Choose source or proxy method") }
                 }
             }
-            if(!controls) FilledIconButton(onClick = { controls = true },Modifier.align(Alignment.BottomEnd).padding(16.dp)) { Icon(Icons.Rounded.Tune,"Show reader controls") }
+            AnimatedVisibility(visible = controls, modifier = Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
+                ReaderHeader(state, model, onChapters = { chapterPicker = true })
+            }
+            AnimatedVisibility(visible = controls, modifier = Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
+                ReaderBottomControls(state, mode, onSettings = { settings = true }, onChapters = { chapterPicker = true },
+                    onPrevious = { model.read(it) }, onNext = { model.read(it) }, onPage = { pageJump = it })
+            }
+            if(!controls && reader.session != null) ReaderPageCounter(reader.page + 1, reader.session.pages.size,
+                Modifier.align(Alignment.BottomCenter))
+
         }
     }
 }
@@ -170,7 +153,7 @@ private fun ChapterImage(url: String, page: Int, strip: Boolean, modifier: Modif
     val request = remember(url,retry) { ImageRequest.Builder(context).data(url).addHeader("User-Agent","ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)").addHeader("Referer","$BASE_URL/").build() }
     Box(modifier.clipToBounds(),contentAlignment = Alignment.Center) {
         SubcomposeAsyncImage(model = request,contentDescription = "Chapter page ${page + 1}",contentScale = if(strip) ContentScale.FillWidth else ContentScale.Fit,modifier = (if(strip) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
-            .pointerInput(url) { detectTapGestures(onTap = { onTap() },onDoubleTap = { zoom = if(zoom > 1f) 1f else 2f; pan = Offset.Zero }) }
+            .pointerInput(url) { detectTapGestures(onTap = { position -> if(position.x in size.width * .25f..size.width * .75f) onTap() },onDoubleTap = { zoom = if(zoom > 1f) 1f else 2f; pan = Offset.Zero }) }
             .transformable(transform,canPan = { zoom > 1f })
         ) {
             when(val imageState = painter.state) {

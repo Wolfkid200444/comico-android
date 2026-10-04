@@ -37,6 +37,8 @@ fun commentValidation(body: String): String? = when {
 class DiscussionController(private val api: ComicoApi, private val scope: CoroutineScope, private val app: Application) {
     private val mutable = MutableStateFlow(DiscussionState())
     val state = mutable.asStateFlow()
+    private val counts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val chapterCommentCounts = counts.asStateFlow()
     private var loadJob: Job? = null
     private var actionJob: Job? = null
     fun open(target: DiscussionTarget) {
@@ -56,6 +58,7 @@ class DiscussionController(private val api: ComicoApi, private val scope: Corout
             mutable.update { it.copy(loading = true, error = null) }
             try {
                 val result = api.discussion(target)
+                if (target.chapter) counts.update { it + (target.id to discussionCommentCount(result)) }
                 mutable.update { if(it.target == target) it.copy(comments = result, loading = false) else it }
             } catch(e: CancellationException) { throw e }
             catch(e: Exception) { mutable.update { it.copy(loading = false, error = e.message ?: "Could not load comments.") } }

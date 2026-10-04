@@ -76,16 +76,18 @@ fun LeaderboardScreen(state: AppState, model: ReaderViewModel) {
 @Composable
 fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, onSelect: (String) -> Unit) {
     val signedIn = state.account.user != null
-    val sections = listOf("Account", "Profile", "Comments", "Reading", "Appearance", "Data", "Leaderboard", "Help", "About")
-    LaunchedEffect(signedIn) { if(!signedIn && selected in listOf("Profile", "Comments", "Data")) onSelect("Menu") }
+    val sections = listOf("Account", "Profile", "Comments", "Reading", "Appearance", "Downloads", "Data and storage", "Leaderboard", "Help", "About")
+    LaunchedEffect(signedIn) { if(!signedIn && selected in listOf("Profile", "Comments")) onSelect("Menu") }
+    if (selected == "Downloads") { DownloadsScreen(state, model); return }
+    if (selected == "Data and storage") { StorageSettingsScreen(state, model); return }
     if (selected == "Comments" && signedIn) {
         CommentsScreen(state, model)
         return
     }
-    SyncRefreshBox(state, model, enabled = selected == "Data") {
+    SyncRefreshBox(state, model, enabled = false) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(20.dp)) {
         if(selected == "Menu") items(sections) { section ->
-            val enabled = signedIn || section !in listOf("Profile", "Comments", "Data")
+            val enabled = signedIn || section !in listOf("Profile", "Comments")
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
                 tooltip = { PlainTooltip { Text(settingsTooltip(section)) } },
@@ -100,7 +102,8 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
                         "Comments" -> Icons.Rounded.ChatBubbleOutline
                         "Reading" -> Icons.Rounded.MenuBook
                         "Appearance" -> Icons.Rounded.Palette
-                        "Data" -> Icons.Rounded.Storage
+                        "Data and storage" -> Icons.Rounded.Storage
+                        "Downloads" -> Icons.Rounded.Download
                         "Leaderboard" -> Icons.Rounded.Leaderboard
                         "Help" -> Icons.Rounded.HelpOutline
                         else -> Icons.Rounded.Info
@@ -115,10 +118,9 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
             "Profile" -> item { IdentityPanel(state,model) }
             "Reading" -> item { Text("Global reader defaults",style = MaterialTheme.typography.titleLarge);Spacer(Modifier.height(16.dp));GlobalReaderOptions(state,model);Spacer(Modifier.height(16.dp));Text("Individual manga can override each global setting.") }
             "Appearance" -> item { AppearancePanel(state,model) }
-            "Data" -> item { DataPanel(state,model) }
             "Help" -> item {
                 Text("Save titles to your library, then use Start reading or Resume on manga details. Reader settings can apply globally or to one manga.")
-                Text("Account library and history sync when signed in. Use Data to retry sync or import guest data.")
+                Text("Account library and history sync when signed in. Use Data and storage to retry sync or import guest data.")
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 TextButton(onClick = { uriHandler.openUri("https://github.com/Wolfkid200444/comico-android/issues") }) { Text("Report an issue") }
             }
@@ -135,7 +137,7 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
 }
 
 @Composable
-private fun DataPanel(state: AppState, model: ReaderViewModel) {
+fun DataPanel(state: AppState, model: ReaderViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
@@ -148,12 +150,12 @@ private fun DataPanel(state: AppState, model: ReaderViewModel) {
             }
         }
     }
-    if(clear) AlertDialog(onDismissRequest = { clear = false },title = { Text("Clear reading history?") },text = { Text("This clears history on this device and your comico.moe account. Saved titles remain in your library.") },confirmButton = { TextButton(onClick = { clear = false;model.clearHistory() }) { Text("Clear history") } },dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancel") } })
+    if(clear) AlertDialog(onDismissRequest = { clear = false },title = { Text("Clear reading history?") },text = { Text(if (state.account.user != null) "This clears history on this device and your comico.moe account. Saved titles remain in your library." else "This clears reading history on this device. Saved titles remain in your library.") },confirmButton = { TextButton(onClick = { clear = false;model.clearHistory() }) { Text("Clear history") } },dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancel") } })
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Account data",style = MaterialTheme.typography.titleLarge)
         SyncStatus(state,model)
         Text("Your account library and reading history sync with comico.moe. Guest data stays separate unless you import it. Reader settings are stored on this device.")
-        OutlinedButton(onClick = model::importGuestData,enabled = !state.syncLoading && !state.account.loading) { Text("Add guest library and history to this account") }
+        if (state.account.user != null) OutlinedButton(onClick = model::importGuestData,enabled = !state.syncLoading && !state.account.loading) { Text("Add guest library and history to this account") }
         OutlinedButton(onClick = { export.launch("comico-data.json") }) { Text("Export library, history and reader defaults") }
         OutlinedButton(onClick = { clear = true },enabled = !state.syncLoading && !state.account.loading) { Text("Clear reading history") }
         message?.let { Text(it) }

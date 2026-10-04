@@ -1,10 +1,14 @@
 package moe.comico.reader
 
 import android.app.Application
+import coil.imageLoader
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +18,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class AppState(
+    val offline: Boolean = false,
+    val chapterReadMarks: Map<String, Boolean> = emptyMap(),
+    val chapterCommentIndicators: Map<String, Int> = emptyMap(),
     val feed: DiscoverFeed? = null, val feedPage: DiscoverPage = DiscoverPage(),
     val discoverSections: Map<DiscoverFeed,DiscoverSection> = emptyMap(), val history: List<HistoryEntry> = emptyList(),
     val syncLoading: Boolean = false, val syncError: String? = null, val lastSync: String? = null,
@@ -26,7 +33,13 @@ data class AppState(
     val firstChapter: Chapter? = null, val startError: String? = null,
     val chapterOffset: Int = 0, val chapterLoading: Boolean = false, val chapterError: String? = null,
     val language: String = "en", val reader: Chapter? = null,
+    val chapterGroup: String? = null, val chapterRoster: List<Chapter>? = null,
+    val chapterGroupsLoading: Boolean = false, val chapterGroupsError: String? = null,
     val libraryQuery: String = "", val librarySearchVisible: Boolean = false,
+    val libraryOptions: LibraryOptions = LibraryOptions(),
+    val libraryCollections: List<LibraryCollection> = emptyList(),
+    val offlineChapters: List<OfflineChapter> = emptyList(), val downloadFolder: String? = null,
+    val downloadBusy: Boolean = false, val downloadMessage: String? = null,
     val library: List<Manga> = emptyList(), val progress: Map<String, Chapter> = emptyMap(),
     val theme: String = "Website", val dynamicColor: Boolean = false, val appearance: AppearanceOptions = AppearanceOptions(),
     val readerPreferences: ReaderPreferences = ReaderPreferences(),
@@ -43,9 +56,11 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     val discussion = DiscussionController(api, viewModelScope, application)
     val updates = AppUpdateController(application, viewModelScope)
     private val nativeRepository = NativeReaderRepository(api)
+    private val offlineStore = OfflineChapterStore(application)
     private val prefs = application.getSharedPreferences("reader", 0)
     private val mutable = MutableStateFlow(AppState())
     val state = mutable.asStateFlow()
+    private var accountRefreshJob: Job? = null
     private var syncJob: Job? = null
     private var progressSyncJob: Job? = null
     private var accountDataJob: Job? = null
@@ -55,8 +70,52 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
     private var chaptersJob: Job? = null
+    private var chapterGroupsJob: Job? = null
     private var sourceJob: Job? = null
     private var readerJob: Job? = null
+    private var localZipEntry: OfflineChapter? = null
+    private val commentChecks = kotlinx.coroutines.sync.Semaphore(2)
+    suspend fun checkChapterComments(chapter: Chapter) {
+        if (mutable.value.offline || chapter.id.startsWith("local-") || chapter.id in mutable.value.chapterCommentIndicators) return
+        commentChecks.acquire()
+        try {
+            if (mutable.value.offline) return
+            val result = api.get("/api/comments", mapOf("chapterId" to chapter.id, "sort" to "newest", "limit" to "1"))
+            mutable.update { it.copy(chapterCommentIndicators = it.chapterCommentIndicators + (chapter.id to commentIndicator(result))) }
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* A missing badge must not prevent reading a chapter. */ }
+        finally { commentChecks.release() }
+    }
+    private val connectivity = application.getSystemService(android.net.ConnectivityManager::class.java)
+    private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onLost(network: android.net.Network) { setConnected(false) }
+        override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) {
+            setConnected(capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+        }
+    }
+    private fun setConnected(connected: Boolean) {
+        viewModelScope.launch {
+            val changed = mutable.value.offline == connected
+            mutable.update { it.copy(offline = !connected) }
+            if (!connected) {
+                discoverJobs.values.forEach { it.cancel() }
+                listOf(accountRefreshJob, syncJob, progressSyncJob, accountDataJob, feedPageJob, catalogJob, detailJob, chaptersJob, chapterGroupsJob, sourceJob).forEach { it?.cancel() }
+                mutable.update { it.copy(loading = false, error = null, syncLoading = false, syncError = null,
+                    chapterLoading = false, chapterError = null, chapterGroupsLoading = false, chapterGroupsError = null,
+                    accountDataLoading = false, accountDataError = null, leaderboardLoading = false, leaderboardError = null,
+                    account = it.account.copy(loading = false, error = null),
+                    discoverSections = it.discoverSections.mapValues { (_, section) -> section.copy(loading = false, error = null) },
+                    feedPage = it.feedPage.copy(loading = false, error = null)) }
+            } else if (changed) {
+                refreshAccount()
+                tab(mutable.value.tab)
+            }
+        }
+    }
+    override fun onCleared() {
+        connectivity.unregisterNetworkCallback(networkCallback)
+        super.onCleared()
+    }
     init {
         val saved = runCatching { JSONArray(prefs.getString("library", "[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
         val progress = runCatching { JSONObject(prefs.getString("progress", "{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
@@ -75,6 +134,9 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             alwaysShowNavLabels = prefs.getBoolean("alwaysShowNavLabels", true)
         )) }
         loadOwner(null)
+        mutable.update { it.copy(offline = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+            ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) != true) }
+        connectivity.registerDefaultNetworkCallback(networkCallback)
         loadDiscover()
         refreshAccount()
     }
@@ -86,11 +148,201 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         if(value == "Library" || value == "History") syncAccount()
         if(value == "Leaderboard") loadLeaderboard()
     }
+    fun useDefaultDownloadFolder() {
+        if (mutable.value.downloadBusy) return
+        offlineStore.resetFolder(mutable.value.account.user?.id)
+        mutable.update { it.copy(downloadFolder = null, downloadMessage = "New downloads will use app storage.") }
+    }
+    @OptIn(coil.annotation.ExperimentalCoilApi::class)
+    suspend fun storageUsage(): StorageUsage {
+        val entries = mutable.value.offlineChapters
+        val app = getApplication<Application>()
+        return withContext(Dispatchers.IO) {
+            var bytes = 0L
+            var unknown = 0
+            entries.forEach { entry ->
+                val uri = android.net.Uri.parse(entry.archive)
+                val size = runCatching {
+                    if (uri.scheme == "file") java.io.File(uri.path!!).takeIf { it.exists() }?.length()
+                    else app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0).takeIf { it >= 0 } else null
+                    }
+                }.getOrNull()
+                if (size == null) unknown++ else bytes += size
+            }
+            StorageUsage(bytes, chapterCacheFiles(app.cacheDir).sumOf { storageBytes(it) },
+                app.imageLoader.diskCache?.size ?: 0L, android.os.StatFs(app.filesDir.absolutePath).availableBytes, unknown)
+        }
+    }
+    @OptIn(coil.annotation.ExperimentalCoilApi::class)
+    suspend fun clearStorageCache(previews: Boolean) {
+        check(!mutable.value.downloadBusy && mutable.value.reader == null) { "Finish downloading or close the reader before clearing its cache." }
+        val app = getApplication<Application>()
+        withContext(Dispatchers.IO) {
+            if (previews) {
+                app.imageLoader.memoryCache?.clear()
+                app.imageLoader.diskCache?.clear()
+            } else clearChapterFiles(app.cacheDir)
+        }
+    }
+    fun chooseDownloadFolder(uri: android.net.Uri): Boolean {
+        return runCatching { offlineStore.chooseFolder(mutable.value.account.user?.id, uri) }.onSuccess {
+            mutable.update { it.copy(downloadFolder = offlineStore.folder(it.account.user?.id), downloadMessage = "Download folder saved.") }
+        }.onFailure { error -> mutable.update { it.copy(downloadMessage = error.message) } }.isSuccess
+    }
+    fun downloadChapter(chapter: Chapter, importedZip: android.net.Uri? = null) =
+        downloadChapters(listOf(chapter), importedZip = importedZip)
+
+    fun allChaptersForSelection(onLoaded: (List<Chapter>) -> Unit) {
+        val before = mutable.value
+        val manga = before.selected ?: return
+        viewModelScope.launch {
+            try {
+                val entries = filterChapterGroup(before.chapterRoster ?: api.chapterRoster(manga.id, before.language, before.chapterSource()), before.chapterGroup)
+                if (mutable.value.selected?.id == manga.id && mutable.value.language == before.language &&
+                    mutable.value.chapterSource() == before.chapterSource() && mutable.value.chapterGroup == before.chapterGroup) {
+                    mutable.update { it.copy(chapters = entries, chapterRoster = before.chapterRoster ?: entries.takeIf { before.chapterGroup == null },
+                        chapterTotal = entries.size, chapterOffset = entries.size) }
+                    onLoaded(entries)
+                } else onLoaded(emptyList())
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { mutable.update { it.copy(downloadMessage = e.message ?: "Couldn't load all chapters.") }; onLoaded(emptyList()) }
+        }
+    }
+
+    fun markChapters(chapters: List<Chapter>, read: Boolean) {
+        val marks = mutable.value.chapterReadMarks + chapters.associate { it.id to read }
+        mutable.update { it.copy(chapterReadMarks = marks) }
+        prefs.edit().putString(ownerKey("chapterReadMarks"), JSONObject(marks).toString()).apply()
+    }
+
+    fun downloadChapters(chapters: List<Chapter>, all: Boolean = false, importedZip: android.net.Uri? = null) {
+        val before = mutable.value
+        val manga = before.selected ?: return
+        if (before.downloadBusy) return
+        val owner = before.account.user?.id
+        val message = when {
+            importedZip == null && before.offline -> "Connect to the internet to download chapters."
+            importedZip == null && owner == null -> "Sign in to download chapters."
+            else -> null
+        }
+        if (message != null) { mutable.update { it.copy(downloadMessage = message) }; return }
+        mutable.update { it.copy(downloadBusy = true, downloadMessage = "Preparing downloads…") }
+        viewModelScope.launch {
+            var completed = 0
+            var skipped = 0
+            try {
+                val entries = if (all) filterChapterGroup(
+                    before.chapterRoster ?: api.chapterRoster(manga.id, before.language, before.chapterSource()), before.chapterGroup
+                ) else chapters
+                val queue = chapterDownloadQueue(entries, before.offlineChapters)
+                skipped = entries.size - queue.size
+                for ((index, chapter) in queue.withIndex()) {
+                    if (mutable.value.account.user?.id != owner) throw CancellationException("Account changed.")
+                    mutable.update { it.copy(downloadMessage = "Downloading ${index + 1}/${queue.size} · Chapter ${chapter.number}") }
+                    val file = withContext(Dispatchers.IO) { java.io.File.createTempFile("chapter-", ".zip", getApplication<Application>().cacheDir) }
+                    try {
+                        if (importedZip == null) api.downloadChapter(chapter.id, file)
+                        else withContext(Dispatchers.IO) {
+                            getApplication<Application>().contentResolver.openInputStream(importedZip)?.use { input ->
+                                file.outputStream().use { copyChapterBytes(input, it) }
+                            } ?: throw java.io.IOException("Couldn't open the selected ZIP.")
+                        }
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (mutable.value.account.user?.id != owner) throw CancellationException("Account changed.")
+                        val source = before.mangaSources.firstOrNull { it.id == chapter.sourceId }?.name ?: chapter.sourceId
+                        offlineStore.save(owner, manga, chapter, source, file)
+                        completed++
+                        mutable.update { if (it.account.user?.id == owner) it.copy(offlineChapters = offlineStore.entries(owner)) else it }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) {
+                        if (importedZip == null && e.message?.startsWith("Comico already marks") == true) skipped++ else throw e
+                    } finally { file.delete() }
+                }
+                mutable.update { it.copy(downloadMessage = "$completed chapters saved · $skipped skipped.") }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { mutable.update { it.copy(downloadMessage = "$completed chapters saved. ${e.message ?: "Download stopped."}") } }
+            finally { mutable.update { it.copy(downloadBusy = false) } }
+        }
+    }
+    fun openOfflineZip(uri: android.net.Uri) {
+        readerJob?.cancel()
+        readerJob = viewModelScope.launch {
+            try {
+                val entry = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    } ?: "Downloaded chapter"
+                    val id = java.util.UUID.nameUUIDFromBytes(uri.toString().toByteArray()).toString()
+                    OfflineChapter(Manga("local-$id", name.removeSuffix(".zip"), "", "", "", emptyList()),
+                        Chapter("local-$id", "Offline", "", "", "", ""), uri.toString(), "Imported ZIP")
+                }
+                detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); chapterGroupsJob?.cancel()
+                localZipEntry = entry
+                mutable.update { it.copy(selected = entry.manga, reader = entry.chapter,
+                    nativeReader = NativeReaderState(loading = true)) }
+                val session = offlineStore.session(entry)
+                mutable.update { it.copy(nativeReader = NativeReaderState(session = session, notice = "Offline chapter")) }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { mutable.update { it.copy(downloadMessage = e.message ?: "Couldn't open this ZIP.",
+                nativeReader = it.nativeReader.copy(loading = false, error = e.message)) } }
+        }
+    }
+    fun openOfflineChapter(entry: OfflineChapter) {
+        detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); readerJob?.cancel(); chapterGroupsJob?.cancel()
+        mutable.update { it.copy(selected = entry.manga, chapters = it.offlineChapters.filter { saved -> saved.manga.id == entry.manga.id }.map { saved -> saved.chapter }, chapterLoading = false) }
+        read(entry.chapter)
+    }
+    fun removeOfflineChapter(entry: OfflineChapter) {
+        val owner = mutable.value.account.user?.id
+        viewModelScope.launch {
+            try {
+                offlineStore.delete(owner, entry)
+                mutable.update { if (it.account.user?.id == owner) it.copy(offlineChapters = offlineStore.entries(owner), downloadMessage = "Download removed.") else it }
+            } catch (e: Exception) { mutable.update { it.copy(downloadMessage = e.message ?: "Couldn't delete this download.") } }
+        }
+    }
+    fun libraryOptions(value: LibraryOptions) {
+        mutable.update { it.copy(libraryOptions = value) }
+        prefs.edit().putString(ownerKey("libraryOptions"), value.toJson().toString()).apply()
+    }
+    fun saveCollection(name: String, id: String? = null): String? {
+        val before = mutable.value
+        collectionNameError(name, before.libraryCollections, id)?.let { return it }
+        val collection = if (id == null) LibraryCollection(java.util.UUID.randomUUID().toString(), name.trim())
+            else before.libraryCollections.firstOrNull { it.id == id }?.copy(name = name.trim()) ?: return "Collection no longer exists."
+        mutable.update { it.copy(libraryCollections = if (id == null) it.libraryCollections + collection
+            else it.libraryCollections.map { old -> if (old.id == id) collection else old }) }
+        persistCollections()
+        return null
+    }
+    fun moveCollection(id: String, direction: Int) {
+        mutable.update { it.copy(libraryCollections = moveLibraryCollection(it.libraryCollections, id, direction)) }
+        persistCollections()
+    }
+    fun deleteCollection(id: String) {
+        mutable.update { it.copy(libraryCollections = it.libraryCollections.filterNot { c -> c.id == id }) }
+        if (mutable.value.libraryOptions.collection == id) libraryOptions(mutable.value.libraryOptions.copy(collection = null))
+        persistCollections()
+    }
+    fun updateCollectionTitles(collectionId: String, mangaIds: Set<String>, add: Boolean) {
+        val ids = mangaIds.intersect(mutable.value.library.map { it.id }.toSet())
+        mutable.update { it.copy(libraryCollections = it.libraryCollections.map { collection ->
+            if (collection.id != collectionId) collection else collection.copy(
+                mangaIds = if (add) collection.mangaIds + ids else collection.mangaIds - ids)
+        }) }
+        persistCollections()
+    }
+    private fun persistCollections() {
+        prefs.edit().putString(ownerKey("libraryCollections"), JSONArray(mutable.value.libraryCollections.map { it.toJson() }).toString()).apply()
+    }
     fun librarySearch(value: String) { mutable.update { it.copy(libraryQuery = value) } }
     fun toggleLibrarySearch() { mutable.update { it.copy(librarySearchVisible = !it.librarySearchVisible,libraryQuery = if(it.librarySearchVisible) "" else it.libraryQuery) } }
     fun search(value: String) { mutable.update { it.copy(query = value) }; loadCatalog(debounce = true) }
     fun format(value: String) { applySearchFilters(mutable.value.searchFilters.copy(type = MangaType.entries.find { it.apiValue.equals(value,ignoreCase = true) })) }
     fun loadCatalog(more: Boolean = false, debounce: Boolean = false) {
+        if (mutable.value.offline) return
         if(mutable.value.tab == "Discover") { loadDiscover(refresh = true);return }
         catalogJob?.cancel()
         catalogJob = viewModelScope.launch {
@@ -105,8 +357,13 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun open(manga: Manga) {
-        detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); readerJob?.cancel()
-        mutable.update { it.copy(selected = manga, reader = null, chapters = emptyList(), chapterTotal = 0, chapterOffset = 0, chapterError = null, mangaSources = emptyList(), chapterLoading = true, firstChapter = null, startError = null) }
+        detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); readerJob?.cancel(); chapterGroupsJob?.cancel()
+        mutable.update { it.copy(selected = manga, reader = null, chapters = emptyList(), chapterTotal = 0, chapterOffset = 0, chapterError = null, chapterGroup = null, chapterRoster = null, chapterGroupsLoading = false, chapterGroupsError = null, mangaSources = emptyList(), chapterLoading = true, firstChapter = null, startError = null) }
+        if (mutable.value.offline) {
+            val downloaded = mutable.value.offlineChapters.filter { it.manga.id == manga.id }.map { it.chapter }
+            mutable.update { it.copy(chapters = downloaded, chapterTotal = downloaded.size, chapterLoading = false, firstChapter = downloaded.minByOrNull { c -> c.number.toDoubleOrNull() ?: 0.0 }) }
+            return
+        }
         detailJob = viewModelScope.launch {
             try { val detail = api.detail(manga.id); mutable.update { if(it.selected?.id == manga.id) it.copy(selected = detail) else it } }
             catch(e: CancellationException) { throw e } catch(e: Exception) { mutable.update { it.copy(chapterError = e.message) } }
@@ -120,18 +377,62 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             loadChapters()
         }
     }
-    fun language(value: String) { mutable.update { it.copy(language = value) }; loadChapters() }
+    private fun resetChapterGroups() {
+        chapterGroupsJob?.cancel()
+        mutable.update { it.copy(chapterGroup = null, chapterRoster = null, chapterGroupsLoading = false, chapterGroupsError = null) }
+    }
+    fun language(value: String) { resetChapterGroups(); mutable.update { it.copy(language = value) }; loadChapters() }
+    fun chapterSource(value: String?) {
+        val before = mutable.value
+        val id = before.selected?.id ?: return
+        resetChapterGroups()
+        setMangaReader((before.readerOverrides[id] ?: ReaderOverride()).copy(sourceOverride = true, source = value))
+        if(before.effectiveReaderPreferences().source == value) loadChapters()
+    }
+    fun chapterGroup(value: String?) {
+        if(value != null && mutable.value.chapterRoster == null) return
+        val state = mutable.value
+        val id = state.selected?.id ?: return
+        setMangaReader((state.readerOverrides[id] ?: ReaderOverride()).withGroup(state.chapterSource(), state.language, value))
+        mutable.update { it.copy(chapterGroup = value) }
+        loadChapters()
+    }
+    fun loadChapterGroups() {
+        if (mutable.value.offline) return
+        val before = mutable.value
+        val manga = before.selected ?: return
+        if(before.chapterGroupsLoading || before.chapterRoster != null) return
+        mutable.update { it.copy(chapterGroupsLoading = true, chapterGroupsError = null) }
+        chapterGroupsJob = viewModelScope.launch {
+            try {
+                val roster = api.chapterRoster(manga.id, before.language, before.chapterSource())
+                mutable.update { it.copy(chapterRoster = roster, chapterGroupsLoading = false) }
+            } catch(e: CancellationException) { throw e }
+            catch(e: Exception) { mutable.update { it.copy(chapterGroupsLoading = false, chapterGroupsError = e.message ?: "Could not load groups.") } }
+        }
+    }
     fun loadChapters(more: Boolean = false) {
+        if (mutable.value.offline) return
         chaptersJob?.cancel()
         chaptersJob = viewModelScope.launch {
-            val before = mutable.value; val manga = before.selected ?: return@launch
+            val current = mutable.value; val manga = current.selected ?: return@launch
+            val savedGroup = current.readerOverrides[manga.id]?.groupFor(current.chapterSource(), current.language)
+            val before = current.copy(chapterGroup = savedGroup)
+            mutable.update { it.copy(chapterGroup = savedGroup) }
             val offset = if(more) before.chapterOffset else 0
             mutable.update { it.copy(chapterLoading = true, chapterError = null, firstChapter = if(more) it.firstChapter else null, startError = null, chapters = if(more) it.chapters else emptyList()) }
             try {
-                val source = before.effectiveReaderPreferences().source?.takeIf { source -> before.mangaSources.any { it.id == source && it.readable } }
-                val result = api.chapters(manga.id, before.language, offset, source)
+                val source = before.chapterSource()
+                val fullRoster = before.chapterRoster ?: if (before.chapterGroup != null) {
+                    api.chapterRoster(manga.id, before.language, source).also { roster ->
+                        mutable.update { it.copy(chapterRoster = roster) }
+                    }
+                } else null
+                val roster = fullRoster?.let { filterChapterGroup(it, before.chapterGroup) }
+                val result = if(roster != null) PageResult(roster.drop(offset).take(50), roster.size)
+                    else api.chapters(manga.id, before.language, offset, source)
                 if(!more) {
-                    try { val first = api.firstChapter(manga.id,before.language,source);mutable.update { it.copy(firstChapter = first) } }
+                    try { val first = if(roster != null) roster.lastOrNull() else api.firstChapter(manga.id,before.language,source);mutable.update { it.copy(firstChapter = first) } }
                     catch(e: CancellationException) { throw e }
                     catch(_: Exception) { mutable.update { it.copy(startError = "Couldn't find the first chapter. Refresh the chapter list to try again.") } }
                 }
@@ -141,7 +442,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
     fun back() {
         if(mutable.value.reader != null) { readerJob?.cancel(); mutable.update { it.copy(reader = null, nativeReader = NativeReaderState()) };progressSyncJob?.cancel();syncAccount() }
-        else { detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); mutable.update { it.copy(selected = null, chapterLoading = false) } }
+        else { detailJob?.cancel(); chaptersJob?.cancel(); sourceJob?.cancel(); chapterGroupsJob?.cancel(); mutable.update { it.copy(selected = null, chapterLoading = false) } }
     }
     fun read(chapter: Chapter) = openReader(chapter,false)
     fun startReading() { mutable.value.firstChapter?.let { openReader(it,true) } }
@@ -195,7 +496,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
     private fun applyReaderPreferenceChanges(old: ReaderPreferences) {
         val current = mutable.value.effectiveReaderPreferences()
-        if(old.source != current.source && mutable.value.selected != null) loadChapters()
+        if(old.source != current.source && mutable.value.selected != null) { resetChapterGroups(); loadChapters() }
         if((old.source != current.source || old.proxy != current.proxy) && mutable.value.reader != null) loadReader()
     }
     fun loadReader() {
@@ -204,6 +505,23 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             val chapter = mutable.value.reader ?: return@launch
             mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = true, session = null, error = null, notice = null)) }
             try {
+                val offline = localZipEntry?.takeIf { it.chapter.id == chapter.id }
+                    ?: mutable.value.offlineChapters.firstOrNull { it.chapter.id == chapter.id }
+                if (offline != null) {
+                    val session = offlineStore.session(offline)
+                    val neighbors = mutable.value.offlineChapters.filter { it.manga.id == offline.manga.id && it.chapter.language == chapter.language && it.chapter.sourceId == chapter.sourceId }
+                        .map { it.chapter }.sortedBy { it.number.toDoubleOrNull() ?: 0.0 }
+                    val index = neighbors.indexOfFirst { it.id == chapter.id }
+                    mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = false, session = session, notice = "Offline chapter",
+                        previous = neighbors.getOrNull(index - 1), next = neighbors.getOrNull(index + 1),
+                        page = it.nativeReader.page.coerceIn(0, session.pages.lastIndex))) }
+                    recordHistory(chapter, mutable.value.nativeReader.page, session.pages.size)
+                    return@launch
+                }
+                if (mutable.value.offline) {
+                    mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = false, error = "This chapter isn't downloaded. Connect to the internet to download it first.")) }
+                    return@launch
+                }
                 try {
                     val context = api.get("/api/chapters/${chapter.id}")
                     mutable.update { it.copy(nativeReader = it.nativeReader.copy(previous = context.optJSONObject("previous")?.chapter(), next = context.optJSONObject("next")?.chapter())) }
@@ -241,6 +559,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         loadCatalog()
     }
     fun loadComickTags() {
+        if (mutable.value.offline) return
         if(mutable.value.tagsLoading || mutable.value.comickTags.isNotEmpty()) return
         viewModelScope.launch {
             mutable.update { it.copy(tagsLoading = true,tagsError = null) }
@@ -251,8 +570,9 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
 
     fun refreshAccount() {
+        if (mutable.value.offline) return
         if(mutable.value.account.loading || mutable.value.syncLoading) return
-        viewModelScope.launch {
+        accountRefreshJob = viewModelScope.launch {
             mutable.update { it.copy(account = it.account.copy(loading = true,error = null)) }
             try { val user = api.account();mutable.update { it.copy(account = AccountState(user = user)) }; activateAccount(user) }
             catch(e: CancellationException) { throw e }
@@ -297,10 +617,18 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private fun loadOwner(owner: String?) {
         discoverJobs.filterKeys { it.accountOnly }.values.forEach { it.cancel() }
         activeOwner = owner
+        val marks = runCatching { JSONObject(prefs.getString(ownerKey("chapterReadMarks"), "{}")!!).let { obj ->
+            obj.keys().asSequence().associateWith { obj.getBoolean(it) }
+        } }.getOrDefault(emptyMap())
+        mutable.update { it.copy(chapterReadMarks = marks) }
+        mutable.update { it.copy(offlineChapters = offlineStore.entries(owner), downloadFolder = offlineStore.folder(it.account.user?.id), downloadMessage = null) }
         val library = runCatching { JSONArray(prefs.getString(ownerKey("library"),"[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
-        val history = runCatching { JSONArray(prefs.getString(ownerKey("history"),"[]")).objects().map { it.historyEntry() } }.getOrDefault(emptyList())
+        val collections = runCatching { JSONArray(prefs.getString(ownerKey("libraryCollections"), "[]")).objects().map { it.libraryCollection() } }.getOrDefault(emptyList())
+        val options = runCatching { JSONObject(prefs.getString(ownerKey("libraryOptions"), "{}")!!).libraryOptions() }.getOrDefault(LibraryOptions())
+        mutable.update { it.copy(libraryCollections = collections, libraryOptions = options.copy(collection = options.collection?.takeIf { id -> collections.any { it.id == id } })) }
+        val history = runCatching { JSONArray(prefs.getString(ownerKey("history"),"[]")).objects().map { it.historyEntry() }.filterNot { it.isLocalChapter() } }.getOrDefault(emptyList())
         val progress = runCatching { JSONObject(prefs.getString(ownerKey("progress"),"{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
-        mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress,syncError = null,lastSync = null,publicProfile = null,comments = emptyList(),profileBio = "",profileSettings = ProfileEdit(),accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
+        mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress.filterNot { (id, chapter) -> id.startsWith("local-") || chapter.id.startsWith("local-") },syncError = null,lastSync = null,publicProfile = null,comments = emptyList(),profileBio = "",profileSettings = ProfileEdit(),accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
     }
     private fun activateAccount(user: AccountUser?) {
         progressSyncJob?.cancel();accountDataJob?.cancel()
@@ -314,6 +642,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         loadFeedPage()
     }
     fun loadFeedPage(more: Boolean = false) {
+        if (mutable.value.offline) return
         val before = mutable.value
         val feed = before.feed ?: return
         if(more && (before.feedPage.loading || !before.feedPage.hasMore)) return
@@ -339,6 +668,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun loadDiscoverFeed(feed: DiscoverFeed) {
+        if (mutable.value.offline) return
         val userId = mutable.value.account.user?.id
         if(feed == DiscoverFeed.HISTORY || (feed.accountOnly && userId == null) || discoverJobs[feed]?.isActive == true) return
         val filters = mutable.value.searchFilters
@@ -354,6 +684,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     private fun recordHistory(chapter: Chapter, page: Int, pageCount: Int) {
+        if (chapter.id.startsWith("local-")) return // Imported ZIPs have no Comico chapter ID to sync.
         val manga = mutable.value.selected ?: return
         val previous = mutable.value.history.firstOrNull { it.chapter.id == chapter.id }
         val entry = HistoryEntry(manga,chapter,page,if(pageCount > 0) pageCount else previous?.pageCount ?: 0,java.time.Instant.now().toString())
@@ -368,7 +699,9 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     fun openHistory(entry: HistoryEntry) {
         open(entry.manga)
     }
-    fun syncAccount() {
+    fun syncAccount() = syncAccount(allowFollowUp = true)
+    private fun syncAccount(allowFollowUp: Boolean) {
+        if (mutable.value.offline) return
         val user = mutable.value.account.user ?: return
         if(mutable.value.syncLoading || mutable.value.account.loading) return
         mutable.update { it.copy(syncLoading = true,syncError = null) }
@@ -391,17 +724,18 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                 } catch(e: CancellationException) { throw e } catch(e: Exception) { failures += "Library: ${e.message}" }
                 try {
                     val remote = api.history()
-                    val queued = pending("progress")
+                    val queued = remoteProgressQueue(pending("progress"))
+                    prefs.edit().putString(ownerKey("pending:progress"), queued.toString()).apply()
                     val uploaded = mutableListOf<HistoryEntry>()
                     for(id in queued.keys().asSequence().toList()) {
                         val entry = queued.getJSONObject(id).historyEntry()
                         val latest = remote.firstOrNull { it.chapter.id == id }
                         if(latest == null || java.time.Instant.parse(entry.readAt) > java.time.Instant.parse(latest.readAt)) { api.saveProgress(entry);uploaded += entry }
                         val current = pending("progress")
-                        if(current.optJSONObject(id)?.toString() == entry.toJson().toString()) { current.remove(id);prefs.edit().putString(ownerKey("pending:progress"),current.toString()).apply() }
+                        if(matchesPendingProgress(current.optJSONObject(id), entry)) { current.remove(id);prefs.edit().putString(ownerKey("pending:progress"),current.toString()).apply() }
                     }
                     val stillPending = pending("progress").let { entries -> entries.keys().asSequence().map { entries.getJSONObject(it).historyEntry() }.toList() }
-                    val merged = accountHistorySnapshot(remote,uploaded,stillPending,mutable.value.history)
+                    val merged = accountHistorySnapshot(remote,uploaded,stillPending,mutable.value.history).filterNot { it.isLocalChapter() }
                     mutable.update { it.copy(history = merged,progress = merged.asReversed().associate { h -> h.manga.id to h.chapter }) }
                     merged.forEach { prefs.edit().putInt(ownerKey("readerPage:${it.chapter.id}"),it.page).apply() }
                     persistHistory()
@@ -412,11 +746,12 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                 if(mutable.value.tab == "Discover") loadDiscoverFeed(DiscoverFeed.UPDATES)
             } finally {
                 mutable.update { it.copy(syncLoading = false) }
-                if(failures.isEmpty() && (pending("bookmarks").length() > 0 || pending("progress").length() > 0)) syncAccount()
+                if(allowFollowUp && failures.isEmpty() && (pending("bookmarks").length() > 0 || pending("progress").length() > 0)) syncAccount(allowFollowUp = false)
             }
         }
     }
     fun loadLeaderboard() {
+        if (mutable.value.offline) return
         if(mutable.value.leaderboardLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(leaderboardLoading = true,leaderboardError = null) }
@@ -426,6 +761,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun loadAccountData() {
+        if (mutable.value.offline) return
         val user = mutable.value.account.user ?: return
         accountDataJob?.cancel()
         accountDataJob = viewModelScope.launch {
@@ -471,7 +807,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         prefs.edit().putString(ownerKey("pending:bookmarks"),bookmarks.toString()).putString(ownerKey("pending:progress"),progress.toString()).apply()
         syncAccount()
     }
-    fun exportData() = JSONObject().put("version",1).put("library",JSONArray(mutable.value.library.map { it.toJson() })).put("history",JSONArray(mutable.value.history.map { it.toJson() })).put("readerDefaults",mutable.value.readerPreferences.toJson()).toString(2)
+    fun exportData() = JSONObject().put("version",2).put("collections", JSONArray(mutable.value.libraryCollections.map { it.toJson() })).put("libraryOptions", mutable.value.libraryOptions.toJson()).put("library",JSONArray(mutable.value.library.map { it.toJson() })).put("history",JSONArray(mutable.value.history.map { it.toJson() })).put("readerDefaults",mutable.value.readerPreferences.toJson()).toString(2)
     fun clearHistory() {
         if(mutable.value.syncLoading || mutable.value.account.loading) return
         viewModelScope.launch {

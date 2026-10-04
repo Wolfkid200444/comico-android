@@ -3,6 +3,7 @@ package moe.comico.reader
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -19,8 +20,6 @@ import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.History
@@ -59,6 +58,11 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
     val discussion by model.discussion.state.collectAsState()
     if(discussion.target != null) DiscussionDialog(discussion, model.discussion, state.account.user != null)
     val screenState = rememberSaveableStateHolder()
+    var libraryFilters by rememberSaveable { mutableStateOf(false) }
+    var libraryMenu by remember { mutableStateOf(false) }
+    var collectionManager by remember { mutableStateOf(false) }
+    if (collectionManager && state.tab == "Library") CollectionManager(state, model) { collectionManager = false }
+    if (libraryFilters && state.tab == "Library" && state.selected == null) LibraryFilterSheet(state, model) { libraryFilters = false }
     var settingsSection by rememberSaveable(state.tab) {
         mutableStateOf(when(state.tab) { "Comments" -> "Comments"; "Edit profile" -> "Profile"; else -> "Menu" })
     }
@@ -102,7 +106,24 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                             } else if(state.tab == "Feed") state.feed?.label.orEmpty() else if(state.tab == "History") "Reading history" else state.tab,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
-                    }, actions = { if(state.tab == "Library") IconButton(onClick = model::toggleLibrarySearch) { Icon(Icons.Rounded.Search, "Search your library") } else if(state.tab != "Search") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") }; if(state.tab == "Profile") AppOverflowMenu(state, model) })
+                    }, actions = { if(state.tab == "Library") {
+                        IconButton(onClick = model::toggleLibrarySearch) { Icon(Icons.Rounded.Search, "Search your library") }
+                        IconButton(onClick = { libraryFilters = true }) {
+                            BadgedBox(badge = { if (state.libraryOptions.filterCount > 0) Badge { Text("${state.libraryOptions.filterCount}") } }) {
+                                Icon(Icons.Rounded.FilterList, "Filter library")
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { libraryMenu = true }) { Icon(Icons.Rounded.MoreVert, "Library options") }
+                            DropdownMenu(libraryMenu, { libraryMenu = false }) {
+                                DropdownMenuItem(text = { Text("Edit Collections") }, onClick = { libraryMenu = false; collectionManager = true })
+                                val collection = state.libraryCollections.firstOrNull { it.id == state.libraryOptions.collection }
+                                val entries = visibleLibrary(state, collection?.mangaIds)
+                                DropdownMenuItem(text = { Text("Open Random Entry") }, enabled = entries.isNotEmpty(),
+                                    onClick = { libraryMenu = false; entries.randomOrNull()?.let(model::open) })
+                            }
+                        }
+                    } else if(state.tab != "Search") IconButton(onClick = { model.tab("Search") }) { Icon(Icons.Rounded.Search, "Search manga") }; if(state.tab == "Profile") AppOverflowMenu(state, model) })
                 },
                 floatingActionButton = {
                     val progress = state.selected?.let { state.progress[it.id] }
@@ -120,18 +141,23 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                     }
                 }
             ) { padding ->
-                Box(Modifier.padding(padding).fillMaxSize()) {
+                Column(Modifier.padding(padding).fillMaxSize()) {
+                    if (state.offline) Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Text("Offline · Saved chapters are available in Settings → Downloads", Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
                     if(state.selected != null) DetailScreen(state,model) else screenState.SaveableStateProvider(state.tab) {
                         when(state.tab) {
                             "Settings", "Comments", "Edit profile" -> SettingsScreen(state,model,settingsSection) { settingsSection = it }
                             "Profile" -> ProfileScreen(state,model)
                             "History" -> HistoryScreen(state,model)
                             "Leaderboard" -> LeaderboardScreen(state,model)
-                            "Discover" -> DiscoverScreen(state,model)
+                            "Discover" -> if (state.offline) DownloadsScreen(state,model) else DiscoverScreen(state,model)
                             "Feed" -> DiscoverPageScreen(state,model)
-                            "Library" -> CatalogScreen(state,filterLibrary(state.library,state.libraryQuery),model,library = true)
-                            else -> CatalogScreen(state,state.catalog,model,library = false)
+                            "Library" -> LibraryScreen(state, model)
+                            else -> CatalogScreen(state,state.catalog,model)
                         }
+                    }
                     }
                 }
             }
@@ -140,25 +166,19 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
 }
 
 @Composable
-private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderViewModel, library: Boolean) {
-    val libraryFocus = remember { FocusRequester() }
+private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderViewModel) {
     var filtersOpen by remember { mutableStateOf(false) }
     if(filtersOpen) SearchFilterDialog(state,model) { filtersOpen = false }
-    SyncRefreshBox(state, model, enabled = library) {
     LazyVerticalGrid(modifier = Modifier.fillMaxSize(), columns = GridCells.Adaptive(145.dp), contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if(library) "Saved stories, ready when you are." else "A quiet place to discover, track and read manga, manhwa and webtoons from supported sources and scanlation groups.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("A quiet place to discover, track and read manga, manhwa and webtoons from supported sources and scanlation groups.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if(library && state.librarySearchVisible) item(span = { GridItemSpan(maxLineSpan) }) {
-            LaunchedEffect(Unit) { libraryFocus.requestFocus() }
-            OutlinedTextField(value = state.libraryQuery,onValueChange = model::librarySearch,modifier = Modifier.fillMaxWidth().focusRequester(libraryFocus),singleLine = true,shape = MaterialTheme.shapes.extraLarge,placeholder = { Text("Search saved titles") },leadingIcon = { Icon(Icons.Rounded.Search,null) },trailingIcon = { IconButton(onClick = { if(state.libraryQuery.isNotEmpty()) model.librarySearch("") else model.toggleLibrarySearch() }) { Icon(Icons.Rounded.Close,if(state.libraryQuery.isNotEmpty()) "Clear library search" else "Close library search") } })
-        }
-        if(!library && state.tab == "Search") item(span = { GridItemSpan(maxLineSpan) }) {
+        if(state.tab == "Search") item(span = { GridItemSpan(maxLineSpan) }) {
             OutlinedTextField(value = state.query, onValueChange = model::search, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(28.dp), placeholder = { Text("Search titles…") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = { if(state.query.isNotEmpty()) IconButton(onClick = { model.search("") }) { Icon(Icons.Rounded.Close, "Clear search") } })
         }
-        if(!library && state.tab == "Search") item(span = { GridItemSpan(maxLineSpan) }) {
+        if(state.tab == "Search") item(span = { GridItemSpan(maxLineSpan) }) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = state.format == "All", onClick = { model.format("All") },label = { Text("All") })
                 FilterChip(selected = state.format == "Manga", onClick = { model.format("Manga") },label = { Text("Manga") })
@@ -167,25 +187,23 @@ private fun CatalogScreen(state: AppState, manga: List<Manga>, model: ReaderView
                 }
             }
         }
-        if(library) state.syncError?.let { error -> item(span = { GridItemSpan(maxLineSpan) }) { Text(error, color = MaterialTheme.colorScheme.error) } }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if(library) "Saved titles · ${manga.size}" else "Search results", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                if(!library) IconButton(onClick = { model.loadCatalog() }, enabled = !state.loading) { Icon(Icons.Rounded.Refresh, "Refresh titles") }
+                Text("Search results", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton(onClick = { model.loadCatalog() }, enabled = !state.loading) { Icon(Icons.Rounded.Refresh, "Refresh titles") }
             }
         }
         items(manga, key = { it.id }) { item ->
             MangaCard(item, state.progress[item.id]?.let { "Chapter ${it.number}" }, { model.open(item) })
         }
-        if(!library && state.error != null) item(span = { GridItemSpan(maxLineSpan) }) { MessageCard(Icons.Rounded.CloudOff, "Couldn't load stories", state.error) { model.loadCatalog(more = state.offset > 0 && manga.isNotEmpty()) } }
-        if(!library && state.loading) item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-        if(manga.isEmpty() && (library || (!state.loading && state.error == null))) item(span = { GridItemSpan(maxLineSpan) }) {
-            MessageCard(if(library) Icons.Rounded.BookmarkBorder else Icons.Rounded.Search, if(library && state.libraryQuery.isNotBlank()) "No saved titles match" else if(library) "Make room for your favorites" else "No stories found", if(library && state.libraryQuery.isNotBlank()) "Try another title or clear your library search." else if(library) "Open a title and save it to your library." else "Try another title or a different format.")
+        if(state.error != null) item(span = { GridItemSpan(maxLineSpan) }) { MessageCard(Icons.Rounded.CloudOff, "Couldn't load stories", state.error) { model.loadCatalog(more = state.offset > 0 && manga.isNotEmpty()) } }
+        if(state.loading) item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        if(manga.isEmpty() && !state.loading && state.error == null) item(span = { GridItemSpan(maxLineSpan) }) {
+            MessageCard(Icons.Rounded.Search, "No stories found", "Try another title or a different format.")
         }
-        if(!library && !state.loading && state.error == null && state.offset < state.total) item(span = { GridItemSpan(maxLineSpan) }) {
+        if(!state.loading && state.error == null && state.offset < state.total) item(span = { GridItemSpan(maxLineSpan) }) {
             OutlinedButton(onClick = { model.loadCatalog(more = true) }, modifier = Modifier.fillMaxWidth()) { Text("Load more stories") }
         }
-    }
     }
 }
 
@@ -225,6 +243,19 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
     val saved = state.library.any { it.id == manga.id }
     var webVisible by remember(manga.id) { mutableStateOf(false) }
     var readerSettings by remember { mutableStateOf(false) }
+    var offlineOnly by remember(manga.id) { mutableStateOf(false) }
+    var selectedChapters by remember(manga.id, state.language, state.chapterSource(), state.chapterGroup, offlineOnly) { mutableStateOf(emptySet<String>()) }
+    var selectLoading by remember { mutableStateOf(false) }
+    var downloadAll by remember { mutableStateOf(false) }
+    val commentCounts by model.discussion.chapterCommentCounts.collectAsState()
+    BackHandler(selectedChapters.isNotEmpty()) { selectedChapters = emptySet() }
+    if (downloadAll) AlertDialog(onDismissRequest = { downloadAll = false },
+        title = { Text("Download all chapters?") },
+        text = { Text("Downloads every available chapter in the selected source, language and group. Already saved chapters are skipped. Your account's download limit still applies.") },
+        confirmButton = { TextButton(onClick = { downloadAll = false; model.downloadChapters(emptyList(), all = true) }) { Text("Download all") } },
+        dismissButton = { TextButton(onClick = { downloadAll = false }) { Text("Cancel") } })
+    val downloaded = state.offlineChapters.filter { it.manga.id == manga.id }
+    val displayedChapters = if (offlineOnly) downloaded.map { it.chapter }.sortedByDescending { it.number.toDoubleOrNull() ?: 0.0 } else state.chapters
     if(readerSettings) ReaderSettingsDialog(state, model) { readerSettings = false }
     if(webVisible) MangaWebDialog(manga, onDismiss = { webVisible = false })
     LazyColumn(contentPadding = PaddingValues(start = 20.dp,end = 20.dp,top = 20.dp,bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -308,26 +339,92 @@ private fun DetailScreen(state: AppState, model: ReaderViewModel) {
                 }
             }
         }
-        items(state.chapters, key = { it.id }) { chapter ->
-            Surface(onClick = { model.read(chapter) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Chapter ${chapter.number}", style = MaterialTheme.typography.titleMedium)
-                        if(chapter.title.isNotBlank()) Text(chapter.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(chapter.group, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Downloaded chapters · ${downloaded.size}", Modifier.weight(1f))
+                Switch(offlineOnly, onCheckedChange = { offlineOnly = it })
+            }
+            DownloadStatus(state)
+        }
+        if (!offlineOnly) item { ChapterFilterControls(state, model) }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${if (offlineOnly) downloaded.size else state.chapterTotal} chapters", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!offlineOnly) TextButton(onClick = { downloadAll = true }, enabled = !state.downloadBusy && !state.offline) { Text("Download all") }
+            }
+        }
+        if (selectedChapters.isNotEmpty()) stickyHeader {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${selectedChapters.size} selected", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    TextButton(onClick = {
+                        if (offlineOnly || state.offline) selectedChapters = displayedChapters.map { it.id }.toSet()
+                        else {
+                            selectLoading = true
+                            model.allChaptersForSelection { chapters ->
+                                selectedChapters = chapters.map { it.id }.toSet()
+                                selectLoading = false
+                            }
+                        }
+                    }, enabled = !selectLoading) { Text(if (selectLoading) "Loading…" else "Select all") }
+                    IconButton(onClick = { selectedChapters = emptySet() }) { Icon(Icons.Rounded.Close, "Clear chapter selection") }
+                }
+                Row {
+                    val selected = displayedChapters.filter { it.id in selectedChapters }
+                    TextButton(onClick = { model.markChapters(selected, true); selectedChapters = emptySet() }) { Text("Read") }
+                    TextButton(onClick = { model.markChapters(selected, false); selectedChapters = emptySet() }) { Text("Unread") }
+                    TextButton(onClick = { model.downloadChapters(selected); selectedChapters = emptySet() }, enabled = !state.downloadBusy) {
+                        Icon(Icons.Rounded.Download, null, Modifier.size(18.dp)); Text("Download", Modifier.padding(start = 4.dp))
+                    }
+                }
+            }
+            }
+        }
+        items(displayedChapters, key = { it.id }) { chapter ->
+            val selected = chapter.id in selectedChapters
+            val read = state.chapterRead(chapter)
+            LaunchedEffect(chapter.id, state.offline) { model.checkChapterComments(chapter) }
+            val commentIndicator = commentCounts[chapter.id] ?: state.chapterCommentIndicators[chapter.id]
+            Surface(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).combinedClickable(
+                    onClick = {
+                        if (selectedChapters.isEmpty()) model.read(chapter)
+                        else selectedChapters = if (selected) selectedChapters - chapter.id else selectedChapters + chapter.id
+                    },
+                    onLongClick = { selectedChapters = selectedChapters + chapter.id },
+                    onLongClickLabel = "Select chapter"),
+                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+            ) {
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (selectedChapters.isNotEmpty()) Icon(
+                        if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        if (selected) "Selected" else "Not selected", Modifier.padding(end = 8.dp).size(20.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Chapter ${chapter.number}", style = MaterialTheme.typography.titleSmall,
+                                color = if (read) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                            if (read) Icon(Icons.Rounded.Done, "Read", Modifier.padding(start = 6.dp).size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        chapterSubtitle(chapter)?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        if (chapter.group.isNotBlank()) Text(chapter.group, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     IconButton(onClick = { model.discussion.open(DiscussionTarget(chapter.id, "${manga.title} · Chapter ${chapter.number}", chapter = true)) }) {
-                        Icon(Icons.Rounded.ChatBubbleOutline, "Comments for chapter ${chapter.number}")
+                        BadgedBox(badge = { commentIndicator?.takeIf { it != 0 }?.let { count ->
+                            if (count < 0) Badge() else Badge { Text(if (count > 99) "99+" else "$count") }
+                        } }) {
+                            Icon(Icons.Rounded.ChatBubbleOutline, "Comments for chapter ${chapter.number}")
+                        }
                     }
-                    Icon(if(chapter.external.isNotEmpty()) Icons.AutoMirrored.Rounded.OpenInNew else Icons.Rounded.ChevronRight, "Read chapter ${chapter.number}", tint = MaterialTheme.colorScheme.primary)
+                    ChapterDownloadAction(state, model, chapter)
                 }
             }
         }
-        if(state.chapterLoading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-        if(state.startError != null) item { Text(state.startError,color = MaterialTheme.colorScheme.error) }
-        if(state.chapterError != null) item { MessageCard(Icons.Rounded.CloudOff, "Couldn't load chapters", state.chapterError) { model.loadChapters() } }
-        if(!state.chapterLoading && state.chapterError == null && state.chapters.isEmpty()) item { MessageCard(Icons.AutoMirrored.Rounded.MenuBook, "No chapters in this language", "Choose another language to check available translations.") }
-        if(!state.chapterLoading && state.chapterOffset < state.chapterTotal) item { OutlinedButton(onClick = { model.loadChapters(true) }, Modifier.fillMaxWidth()) { Text("Load more chapters") } }
+        if(!offlineOnly && state.chapterLoading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        if(!offlineOnly && state.startError != null) item { Text(state.startError,color = MaterialTheme.colorScheme.error) }
+        if(!offlineOnly && state.chapterError != null) item { MessageCard(Icons.Rounded.CloudOff, "Couldn't load chapters", state.chapterError) { model.loadChapters() } }
+        if(!offlineOnly && !state.chapterLoading && state.chapterError == null && state.chapters.isEmpty()) item { MessageCard(Icons.AutoMirrored.Rounded.MenuBook, "No chapters in this language", "Choose another language to check available translations.") }
+        if(!offlineOnly && !state.chapterLoading && state.chapterOffset < state.chapterTotal) item { OutlinedButton(onClick = { model.loadChapters(true) }, Modifier.fillMaxWidth()) { Text("Load more chapters") } }
     }
 }
 

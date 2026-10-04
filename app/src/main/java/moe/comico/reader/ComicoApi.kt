@@ -15,14 +15,14 @@ import java.util.concurrent.TimeUnit
 const val BASE_URL = "https://comico.moe"
 data class Manga(val id: String, val title: String, val cover: String, val status: String, val format: String, val tags: List<String>, val description: String = "", val rating: String = "safe", val credits: List<MangaCredit> = emptyList())
 data class MangaCredit(val name: String, val role: String)
-data class Chapter(val id: String, val number: String, val title: String, val language: String, val group: String, val external: String)
+data class Chapter(val id: String, val number: String, val title: String, val language: String, val group: String, val external: String, val groupId: String = "", val sourceId: String = "")
 data class PageResult<T>(val items: List<T>, val total: Int)
 
 fun JSONObject.manga() = Manga(getString("id"), getString("title"), absoluteUrl(optString("coverUrl")), optString("status"), optString("format"), optJSONArray("tags").objects().map { it.optString("name") }, optString("description"), optString("contentRating", "safe"), optJSONArray("authors").objects().mapNotNull {
     val name = it.optString("name").trim().takeUnless { name -> name.isEmpty() || name == "null" }
     name?.let { name -> MangaCredit(name, it.optString("role", "author")) }
 })
-fun JSONObject.chapter() = Chapter(getString("id"), optString("number", "?"), optString("title"), optString("language"), optString("scanlationGroup", "Unknown group"), optString("externalUrl").takeUnless { it == "null" }.orEmpty())
+fun JSONObject.chapter() = Chapter(getString("id"), optString("number", "?"), optString("title"), optString("language"), optString("scanlationGroup", "Unknown group"), optString("externalUrl").takeUnless { it == "null" }.orEmpty(), optString("scanlationGroupId").takeUnless { it == "null" }.orEmpty(), optString("sourceId").takeUnless { it == "null" }.orEmpty())
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 fun absoluteUrl(value: String): String = if (value.startsWith("/")) BASE_URL + value else value
 
@@ -56,6 +56,24 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
             response.body?.string() ?: throw IOException("Empty response from the source.")
         }
     }
+    suspend fun downloadChapter(id: String, destination: java.io.File) = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$baseUrl/api/downloads/chapter")
+            .header("Origin", BASE_URL).header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
+            .post(JSONObject().put("chapterId", id).toString().toRequestBody("application/json".toMediaType())).build()
+        try {
+            client.newBuilder().callTimeout(3, TimeUnit.MINUTES).build().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val error = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+                    if (error?.optJSONObject("data")?.optString("kind") == "already-downloaded")
+                        throw IOException("Comico already marks this chapter as downloaded. Import its existing ZIP to read it offline here.")
+                    throw IOException(error?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: if (response.code == 401) "Sign in to download chapters." else "Download failed (HTTP ${response.code}).")
+                }
+                val body = response.body ?: throw IOException("The server returned an empty download.")
+                destination.outputStream().use { output -> body.byteStream().use { copyChapterBytes(it, output) } }
+            }
+        } catch (e: Exception) { destination.delete(); throw e }
+    }
     suspend fun get(path: String, query: Map<String, String> = emptyMap()): JSONObject {
         val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString()))
@@ -83,7 +101,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         }
     }
     suspend fun mangaSources(id: String) = JSONArray(requestText("$baseUrl/api/manga/$id/sources")).objects().map {
-        ReaderSource(it.getString("sourceId"), it.optString("name", it.getString("sourceId")), it.optInt("readableChapterCount") > 0)
+        ReaderSource(it.getString("sourceId"), it.optString("name", it.getString("sourceId")), it.optInt("readableChapterCount") > 0, chapterCount = it.optInt("chapterCount"))
     }
     suspend fun readerSources(id: String) = JSONArray(requestText("$baseUrl/api/reader/chapters/$id/sources?direct=true")).objects().map {
         ReaderSource(it.getString("readerSourceId"), it.optString("name", it.getString("readerSourceId")), it.optBoolean("readable", true), it.optString("providerSourceName").takeUnless { name -> name.isBlank() || name == "null" })
@@ -97,9 +115,22 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
     }
     suspend fun comickTags() = JSONArray(requestText("$baseUrl/api/tags?source=comick-metadata")).objects().map { ComickTag(it.getString("id"),it.getString("name")) }.sortedBy { it.name.lowercase() }
     suspend fun detail(id: String) = get("/api/manga/$id").manga()
-    suspend fun chapters(id: String, language: String, offset: Int, source: String? = null): PageResult<Chapter> {
-        val data = get("/api/manga/$id/chapters", mapOf("language" to language, "limit" to "50", "offset" to offset.toString(), "order" to "desc", "sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
+    suspend fun chapters(id: String, language: String, offset: Int, source: String? = null, limit: Int = 50): PageResult<Chapter> {
+        val data = get("/api/manga/$id/chapters", mapOf("language" to language, "limit" to limit.toString(), "offset" to offset.toString(), "order" to "desc", "sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
         return PageResult(data.optJSONArray("items").objects().map { it.chapter() }, data.optInt("total"))
+    }
+    suspend fun chapterRoster(id: String, language: String, source: String?): List<Chapter> {
+        val entries = linkedMapOf<String, Chapter>()
+        var offset = 0
+        do {
+            val result = chapters(id, language, offset, source, limit = 100)
+            val previousSize = entries.size
+            result.items.forEach { entries[it.id] = it }
+            offset += result.items.size
+            if(result.items.isNotEmpty() && entries.size == previousSize) throw IOException("Chapter pages stopped advancing. Try again.")
+            if(result.items.size < 100 || offset >= result.total) break
+        } while(true)
+        return entries.values.toList()
     }
     suspend fun library(): List<Manga> {
         val entries = mutableListOf<Manga>()
@@ -107,7 +138,10 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         while(true) {
             val data = get("/api/library",mapOf("limit" to "100","offset" to offset.toString(),"sort" to "recent"))
             val batch = data.getJSONArray("items").objects()
-            entries += batch.map { it.getJSONObject("manga").manga() }
+            val titles = batch.map { it.getJSONObject("manga").manga() }
+            if(titles.isNotEmpty() && titles.none { title -> entries.none { it.id == title.id } })
+                throw IOException("Library pagination stopped advancing. Pull down to retry.")
+            entries += titles
             offset += batch.size
             if(batch.size < 100 || (data.has("total") && offset >= data.getInt("total"))) break
         }
@@ -118,6 +152,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
     }
     suspend fun history() = JSONArray(requestText("$baseUrl/api/history")).objects().map { it.historyEntry() }
     suspend fun saveProgress(entry: HistoryEntry) {
+        if (entry.isLocalChapter()) return
         requestText("$baseUrl/api/progress/${entry.manga.id}",entry.progressPayload())
     }
     suspend fun clearHistory() { requestText("$baseUrl/api/history",method = "DELETE") }

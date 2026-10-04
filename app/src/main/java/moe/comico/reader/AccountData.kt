@@ -13,7 +13,7 @@ data class HistoryEntry(val manga: Manga, val chapter: Chapter, val page: Int, v
     fun toJson() = JSONObject().put("manga",manga.toJson()).put("chapter",chapter.toJson()).put("page",page).put("pageCount",pageCount).put("readAt",readAt)
 }
 fun Manga.toJson() = JSONObject().put("id",id).put("title",title).put("coverUrl",cover).put("status",status).put("format",format).put("description",description).put("contentRating",rating).put("tags",JSONArray(tags.map { JSONObject().put("name",it) })).put("authors",JSONArray(credits.map { JSONObject().put("name",it.name).put("role",it.role) }))
-fun Chapter.toJson() = JSONObject().put("id",id).put("number",number).put("title",title).put("language",language).put("scanlationGroup",group).put("externalUrl",external)
+fun Chapter.toJson() = JSONObject().put("id",id).put("number",number).put("title",title).put("language",language).put("scanlationGroup",group).put("externalUrl",external).put("scanlationGroupId",groupId).put("sourceId",sourceId)
 fun JSONObject.historyEntry(): HistoryEntry {
     val manga = JSONObject(getJSONObject("manga").toString()).apply {
         if(!has("id")) put("id",this@historyEntry.getString("mangaId"))
@@ -41,6 +41,19 @@ fun JSONObject.accountComment(): AccountComment {
     return AccountComment(getString("id"),text("body"),text("createdAt"),mangaTitle,
         text("context").ifBlank { fallback }, absoluteUrl(text("coverUrl")), text("href"))
 }
+
+fun HistoryEntry.isLocalChapter() = manga.id.startsWith("local-") || chapter.id.startsWith("local-")
+
+fun remoteProgressQueue(queued: JSONObject): JSONObject = JSONObject(queued.toString()).apply {
+    keys().asSequence().toList().forEach { id ->
+        val entry = optJSONObject(id)
+        if (id.startsWith("local-") || entry?.optJSONObject("chapter")?.optString("id")?.startsWith("local-") == true ||
+            entry?.optJSONObject("manga")?.optString("id")?.startsWith("local-") == true) remove(id)
+    }
+}
+
+fun matchesPendingProgress(queued: JSONObject?, uploaded: HistoryEntry): Boolean =
+    queued != null && runCatching { queued.historyEntry() == uploaded }.getOrDefault(false)
 
 fun accountStorageKey(key: String, owner: String?) = owner?.let { "$key:account:$it" } ?: key
 
