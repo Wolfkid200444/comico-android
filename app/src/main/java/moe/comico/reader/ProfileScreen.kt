@@ -38,7 +38,7 @@ fun ProfileScreen(state: AppState, model: ReaderViewModel) {
     val profile = state.publicProfile
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
         isRefreshing = state.accountDataLoading,
-        onRefresh = { if(user != null && !state.accountDataLoading) model.loadAccountData() },
+        onRefresh = { if(!state.offline && user != null && !state.accountDataLoading) model.loadAccountData() },
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
@@ -114,6 +114,16 @@ fun ProfileScreen(state: AppState, model: ReaderViewModel) {
             if(user == null) item {
                 MessageCard(Icons.Rounded.AccountCircle, "Your reading profile",
                     "Sign in from Settings to see your badges, level and reading stats.")
+            }
+            item {
+                Surface(onClick = { model.tab("Statistics") }, shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    ListItem(headlineContent = { Text("Statistics") },
+                        supportingContent = { Text("Reading, library and downloads") },
+                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        leadingContent = { Icon(Icons.Rounded.BarChart, null) },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) })
+                }
             }
             state.accountDataError?.let { error -> item {
                 Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)

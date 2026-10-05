@@ -5,6 +5,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ApiModelsTest {
+    @Test fun latestChapterDateAndNumberSurviveCaching() {
+        val manga = JSONObject("""{"id":"id","title":"Story","updatedAt":"2026-01-01T00:00:00Z","latestChapter":{"number":"12.5","publishedAt":"2026-10-04T10:00:00Z"}}""").manga()
+        assertEquals("2026-10-04T10:00:00Z", manga.updatedAt)
+        assertEquals("12.5", manga.latestChapterNumber)
+        assertEquals(manga, JSONObject(manga.toJson().toString()).manga())
+        val missing = JSONObject("""{"id":"id","title":"Story","latestChapter":{"number":null,"publishedAt":null}}""").manga()
+        assertEquals("", missing.updatedAt)
+        assertEquals("", missing.latestChapterNumber)
+    }
     @Test fun relativeCoverAndOptionalMetadata() {
         val manga = JSONObject("""{"id":"id","title":"A story","coverUrl":"/api/covers/a.jpg","tags":[{"name":"Adventure"}]}""").manga()
         assertEquals("https://comico.moe/api/covers/a.jpg", manga.cover)

@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 enum class SearchSort(val label: String, val apiValue: String) { RELEVANCE("Relevance", "relevance"), LATEST("Recently updated", "latest"), POPULAR("Most followed", "popular"), TITLE("Title A–Z", "title") }
 enum class ContentFilter(val label: String, val apiValue: String) { SAFE("Safe only", "safe"), SUGGESTIVE("Up to suggestive", "suggestive"), EROTICA("Up to erotica", "erotica"), ALL("All ratings", "pornographic") }
-enum class MangaType(val label: String, val apiValue: String) { MANGA("Manga", "manga"), MANHWA("Manhwa", "manhwa"), MANHUA("Manhua", "manhua"), WEBTOON("Webtoons", "webtoon") }
+enum class MangaType(val label: String, val apiValue: String) { MANGA("Manga", "manga"), MANHWA("Manhwa", "manhwa"), MANHUA("Manhua", "manhua"), WEBTOON("Webtoon", "webtoon") }
 enum class Demographic(val label: String, val apiValue: String) { SHOUNEN("Shounen", "shounen"), SHOUJO("Shoujo", "shoujo"), SEINEN("Seinen", "seinen"), JOSEI("Josei", "josei") }
 enum class ReleaseStatus(val label: String, val apiValue: String) { ONGOING("Ongoing", "ongoing"), COMPLETED("Completed", "completed"), HIATUS("Hiatus", "hiatus"), CANCELLED("Cancelled", "cancelled") }
 data class ComickTag(val id: String, val name: String)

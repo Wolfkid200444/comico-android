@@ -11,6 +11,19 @@ class LibraryOptionsTest {
     private val chapter = Chapter("ch", "12.5", "", "en", "", "")
     private val state = AppState(library = listOf(c, b, a), progress = mapOf("b" to chapter),
         history = listOf(HistoryEntry(a, chapter, 0, 20, "2026-10-03T12:00:00Z")))
+    @Test fun savedChaptersAppearWithoutBookmarkAndOfflineHidesUnavailableTitles() {
+        val saved = OfflineChapter(b, chapter, "file:///saved.zip", "Test source")
+        val local = AppState(offlineChapters = listOf(saved))
+        assertEquals(listOf(b), visibleLibrary(local))
+        val unreadChapter = chapter.copy(id = "not-downloaded")
+        val offline = local.copy(offline = true, progress = mapOf("b" to unreadChapter))
+        assertEquals(chapter, offline.resumeChapter("b"))
+        assertEquals(unreadChapter, offline.copy(offline = false).resumeChapter("b"))
+        assertEquals(listOf(b), visibleLibrary(state.copy(offline = true, offlineChapters = listOf(saved))))
+        assertEquals(3, libraryTitles(state.copy(offlineChapters = listOf(saved))).size)
+        assertEquals(listOf(b), visibleLibrary(local, setOf("b")))
+        assertTrue(visibleLibrary(local, setOf("a")).isEmpty())
+    }
     @Test fun filtersCombineSearchCollectionFormatStatusAndReadingProgress() {
         val filtered = state.copy(libraryQuery = " a ", libraryOptions = LibraryOptions(format = "MANGA", status = "ongoing",
             progress = LibraryProgress.STARTED))

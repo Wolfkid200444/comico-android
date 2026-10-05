@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -69,6 +71,7 @@ fun extractChapterArchive(input: InputStream, directory: File, checkActive: () -
 
 class OfflineChapterStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("offlineChapters", 0)
+    private val writes = Mutex()
     fun folder(owner: String?): String? = prefs.getString(accountStorageKey("folder", owner), null)
     fun chooseFolder(owner: String?, uri: Uri) {
         require(uri.authority == "com.android.externalstorage.documents") { "Choose a folder in internal storage or on an SD card so chapters remain available offline." }
@@ -82,7 +85,7 @@ class OfflineChapterStore(private val context: Context) {
     private fun persist(owner: String?, entries: List<OfflineChapter>) {
         prefs.edit().putString(accountStorageKey("chapters", owner), JSONArray(entries.map { it.toJson() }).toString()).apply()
     }
-    suspend fun save(owner: String?, manga: Manga, chapter: Chapter, source: String, archive: File): OfflineChapter = withContext(Dispatchers.IO) {
+    suspend fun save(owner: String?, manga: Manga, chapter: Chapter, source: String, archive: File): OfflineChapter = writes.withLock { withContext(Dispatchers.IO) {
         val chosenFolder = folder(owner)
         // Validate every page before publishing the ZIP to the offline library.
         val validation = File(context.cacheDir, "validate-${UUID.randomUUID()}").apply { mkdirs() }
@@ -118,7 +121,7 @@ class OfflineChapterStore(private val context: Context) {
             runCatching { DocumentsContract.deleteDocument(context.contentResolver, document) }
             throw e
         }
-    }
+    } }
     suspend fun session(entry: OfflineChapter): ReaderSession = withContext(Dispatchers.IO) {
         context.cacheDir.listFiles()?.filter { it.name.startsWith("offline-") }?.forEach { it.deleteRecursively() }
         val directory = File(context.cacheDir, "offline-${UUID.randomUUID()}").apply { mkdirs() }
@@ -129,7 +132,7 @@ class OfflineChapterStore(private val context: Context) {
             ReaderSession(pages.map { Uri.fromFile(it).toString() }, entry.source, "Downloaded chapter · Offline", ProxyMethod.AUTO, null)
         } catch (e: Exception) { directory.deleteRecursively(); throw e }
     }
-    suspend fun delete(owner: String?, entry: OfflineChapter) = withContext(Dispatchers.IO) {
+    suspend fun delete(owner: String?, entry: OfflineChapter) = writes.withLock { withContext(Dispatchers.IO) {
         val uri = Uri.parse(entry.archive)
         val deleted = if (uri.scheme == "file") {
             val file = File(uri.path ?: throw IOException("Invalid download path."))
@@ -138,5 +141,5 @@ class OfflineChapterStore(private val context: Context) {
         } else DocumentsContract.deleteDocument(context.contentResolver, uri)
         if (!deleted) throw IOException("Couldn't delete this download.")
         persist(owner, entries(owner).filterNot { it.archive == entry.archive })
-    }
+    } }
 }

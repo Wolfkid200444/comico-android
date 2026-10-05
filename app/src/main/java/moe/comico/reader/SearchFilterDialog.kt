@@ -19,7 +19,7 @@ fun SearchFilterDialog(state: AppState, model: ReaderViewModel, onDismiss: () ->
         Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()),verticalArrangement = Arrangement.spacedBy(14.dp)) {
             SettingChoice("Sort by",draft.sort,SearchSort.entries.map { it to it.label }) { draft = draft.copy(sort = it) }
             SettingChoice("Content filter",draft.content,ContentFilter.entries.map { it to it.label }) { draft = draft.copy(content = it) }
-            SettingChoice("Types",draft.type,listOf<Pair<MangaType?,String>>(null to "Any type") + MangaType.entries.map { it to it.label }) { draft = draft.copy(type = it) }
+            SettingChoice("Types",draft.type,listOf<Pair<MangaType?,String>>(null to "All") + MangaType.entries.map { it to it.label }) { draft = draft.copy(type = it) }
             SettingChoice("Demographic",draft.demographic,listOf<Pair<Demographic?,String>>(null to "Any demographic") + Demographic.entries.map { it to it.label }) { draft = draft.copy(demographic = it) }
             SettingChoice("Release status",draft.status,listOf<Pair<ReleaseStatus?,String>>(null to "Any status") + ReleaseStatus.entries.map { it to it.label }) { draft = draft.copy(status = it) }
             Text("Comick tags · ${draft.tags.size}/20",style = MaterialTheme.typography.labelLarge)

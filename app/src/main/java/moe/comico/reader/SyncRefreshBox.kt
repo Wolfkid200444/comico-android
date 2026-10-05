@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 @Composable
 fun SyncRefreshBox(state: AppState, model: ReaderViewModel, enabled: Boolean = true,
                    content: @Composable () -> Unit) {
-    if(enabled) PullToRefreshBox(
+    if(enabled && !state.offline) PullToRefreshBox(
         isRefreshing = state.syncLoading,
         onRefresh = { if(!state.syncLoading && !state.account.loading) model.syncAccount() },
         modifier = Modifier.fillMaxSize()

@@ -16,9 +16,17 @@ data class AppRelease(val version: String, val apkUrl: String, val pageUrl: Stri
     val notes: String = "", val size: Long = 0, val sha256: String? = null)
 fun releaseNotes(notes: String) = notes.trim().takeIf { it.isNotEmpty() && it != "null" }
     ?: "No changelog was provided for this release."
+data class ReleaseHistory(val version: String, val notes: String, val publishedAt: String, val prerelease: Boolean)
+fun JSONObject.releaseHistory(): ReleaseHistory? {
+    if (optBoolean("draft")) return null
+    val version = optString("tag_name").removePrefix("v")
+    if (version.isBlank()) return null
+    return ReleaseHistory(version, optString("body").takeUnless { it == "null" }.orEmpty(),
+        optString("published_at").takeUnless { it == "null" }.orEmpty(), optBoolean("prerelease"))
+}
 data class UpdateState(val automatic: Boolean = true, val checking: Boolean = false,
     val release: AppRelease? = null, val prompt: Boolean = false, val message: String? = null,
-    val downloading: Boolean = false, val progress: Float? = null, val downloaded: java.io.File? = null, val error: String? = null)
+    val downloading: Boolean = false, val progress: Float? = null, val downloaded: java.io.File? = null, val error: String? = null, val history: List<ReleaseHistory> = emptyList(), val historyLoading: Boolean = false, val historyError: String? = null)
 fun versionParts(value: String): List<Int>? {
     val match = Regex("v?([0-9]+)\\.([0-9]+)\\.([0-9]+)").matchEntire(value) ?: return null
     return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
@@ -53,6 +61,37 @@ class AppUpdateController(private val app: Application, private val scope: Corou
     private val client = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
     private val mutable = MutableStateFlow(UpdateState(automatic = prefs.getBoolean("automatic", true)))
     val state = mutable.asStateFlow()
+    init {
+        val history = runCatching { org.json.JSONArray(prefs.getString("releaseHistory", "[]")).objects().mapNotNull { it.releaseHistory() } }.getOrDefault(emptyList())
+        mutable.update { it.copy(history = history) }
+    }
+    fun loadHistory() {
+        if (mutable.value.historyLoading) return
+        mutable.update { it.copy(historyLoading = true, historyError = null) }
+        scope.launch {
+            try {
+                val rows = withContext(Dispatchers.IO) {
+                    val all = mutableListOf<JSONObject>()
+                    var page = 1
+                    do {
+                        val request = Request.Builder().url("https://api.github.com/repos/$UPDATE_REPOSITORY/releases?per_page=100&page=$page")
+                            .header("Accept", "application/vnd.github+json")
+                            .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME}").build()
+                        val batch = client.newCall(request).execute().use { response ->
+                            if (!response.isSuccessful) throw IOException("Couldn't load changelogs (HTTP ${response.code}).")
+                            org.json.JSONArray(response.body?.string() ?: throw IOException("Empty release response.")).objects()
+                        }
+                        all += batch
+                        page++
+                    } while (batch.size == 100)
+                    all
+                }
+                prefs.edit().putString("releaseHistory", org.json.JSONArray(rows).toString()).apply()
+                mutable.update { it.copy(historyLoading = false, history = rows.mapNotNull { row -> row.releaseHistory() }) }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { mutable.update { it.copy(historyLoading = false, historyError = e.message ?: "Couldn't load changelogs.") } }
+        }
+    }
     private var lastAttempt = 0L
     fun automatic(enabled: Boolean) {
         prefs.edit().putBoolean("automatic", enabled).apply()

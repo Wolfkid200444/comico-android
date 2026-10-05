@@ -1,6 +1,7 @@
 package moe.comico.reader
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -13,7 +14,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 const val BASE_URL = "https://comico.moe"
-data class Manga(val id: String, val title: String, val cover: String, val status: String, val format: String, val tags: List<String>, val description: String = "", val rating: String = "safe", val credits: List<MangaCredit> = emptyList())
+data class Manga(val id: String, val title: String, val cover: String, val status: String, val format: String, val tags: List<String>, val description: String = "", val rating: String = "safe", val credits: List<MangaCredit> = emptyList(), val updatedAt: String = "", val latestChapterNumber: String = "")
 data class MangaCredit(val name: String, val role: String)
 data class Chapter(val id: String, val number: String, val title: String, val language: String, val group: String, val external: String, val groupId: String = "", val sourceId: String = "")
 data class PageResult<T>(val items: List<T>, val total: Int)
@@ -21,14 +22,17 @@ data class PageResult<T>(val items: List<T>, val total: Int)
 fun JSONObject.manga() = Manga(getString("id"), getString("title"), absoluteUrl(optString("coverUrl")), optString("status"), optString("format"), optJSONArray("tags").objects().map { it.optString("name") }, optString("description"), optString("contentRating", "safe"), optJSONArray("authors").objects().mapNotNull {
     val name = it.optString("name").trim().takeUnless { name -> name.isEmpty() || name == "null" }
     name?.let { name -> MangaCredit(name, it.optString("role", "author")) }
-})
+}, updatedAt = optJSONObject("latestChapter")?.optString("publishedAt")?.takeUnless { it.isBlank() || it == "null" }
+    ?: optString("updatedAt").takeUnless { it == "null" }.orEmpty(),
+    latestChapterNumber = optJSONObject("latestChapter")?.optString("number")?.takeUnless { it == "null" }.orEmpty())
 fun JSONObject.chapter() = Chapter(getString("id"), optString("number", "?"), optString("title"), optString("language"), optString("scanlationGroup", "Unknown group"), optString("externalUrl").takeUnless { it == "null" }.orEmpty(), optString("scanlationGroupId").takeUnless { it == "null" }.orEmpty(), optString("sourceId").takeUnless { it == "null" }.orEmpty())
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 fun absoluteUrl(value: String): String = if (value.startsWith("/")) BASE_URL + value else value
 
-class ComicoApi(private val accountCookies: AccountCookieJar? = null, private val baseUrl: String = BASE_URL) {
+class ComicoApi(private val accountCookies: AccountCookieJar? = null, private val baseUrl: String = BASE_URL, private val networkAvailable: () -> Boolean = { true }) {
     private val client = OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).apply { accountCookies?.let { cookieJar(it) } }.build()
     suspend fun requestText(url: String, body: JSONObject? = null, method: String = if(body == null) "GET" else "POST"): String = withContext(Dispatchers.IO) {
+        check(networkAvailable()) { "Offline. Connect to use this feature." }
         val request = Request.Builder().url(url)
             .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
             .apply { if(url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/")) header("Origin",BASE_URL) }
@@ -57,6 +61,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         }
     }
     suspend fun downloadChapter(id: String, destination: java.io.File) = withContext(Dispatchers.IO) {
+        check(networkAvailable()) { "Offline. Connect to download chapters." }
         val request = Request.Builder().url("$baseUrl/api/downloads/chapter")
             .header("Origin", BASE_URL).header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
             .post(JSONObject().put("chapterId", id).toString().toRequestBody("application/json".toMediaType())).build()
@@ -73,6 +78,41 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
                 destination.outputStream().use { output -> body.byteStream().use { copyChapterBytes(it, output) } }
             }
         } catch (e: Exception) { destination.delete(); throw e }
+    }
+    suspend fun cacheReaderImages(session: ReaderSession, archive: java.io.File) = withContext(Dispatchers.IO) {
+        require(session.pages.size in 1..1000) { "Invalid chapter page count." }
+        var bytes = 0L
+        val downloadContext = coroutineContext
+        try {
+            java.util.zip.ZipOutputStream(archive.outputStream()).use { zip ->
+                session.pages.forEachIndexed { index, url ->
+                    downloadContext.ensureActive()
+                    check(networkAvailable()) { "Offline. Chapter saving paused." }
+                    val request = Request.Builder().url(url).header("Referer", "$BASE_URL/")
+                        .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME}").build()
+                    client.newCall(request).execute().use { response ->
+                        check(response.isSuccessful) { "Couldn't cache page ${index + 1}." }
+                        val body = response.body ?: error("Empty chapter image.")
+                        val extension = when (body.contentType()?.subtype?.lowercase()) {
+                            "jpeg", "jpg" -> "jpg"
+                            "png" -> "png"
+                            "webp" -> "webp"
+                            "gif" -> "gif"
+                            "avif" -> "avif"
+                            else -> error("The source returned an unsupported image.")
+                        }
+                        zip.putNextEntry(java.util.zip.ZipEntry("${index.toString().padStart(4, '0')}.$extension"))
+                        body.byteStream().use {
+                            bytes += copyChapterBytes(it, zip, 512L * 1024 * 1024 - bytes) {
+                                downloadContext.ensureActive()
+                    check(networkAvailable()) { "Offline. Chapter saving paused." }
+                            }
+                        }
+                        zip.closeEntry()
+                    }
+                }
+            }
+        } catch (e: Exception) { archive.delete(); throw e }
     }
     suspend fun get(path: String, query: Map<String, String> = emptyMap()): JSONObject {
         val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()

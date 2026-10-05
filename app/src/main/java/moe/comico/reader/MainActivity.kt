@@ -22,16 +22,16 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalAppearance provides state.appearance) {
                 ComicoTheme(state.theme, state.dynamicColor) {
                     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-                    DisposableEffect(lifecycleOwner, model) {
+                    DisposableEffect(lifecycleOwner, model, state.offline) {
                         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                            if(event == androidx.lifecycle.Lifecycle.Event.ON_START) model.updates.check()
+                            if(!state.offline && event == androidx.lifecycle.Lifecycle.Event.ON_START) model.updates.check()
                         }
                         lifecycleOwner.lifecycle.addObserver(observer)
-                        if(lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) model.updates.check()
+                        if(!state.offline && lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) model.updates.check()
                         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
                     }
                     ComicoApp(state, model)
-                    UpdatePrompt(model.updates)
+                    if (!state.offline) UpdatePrompt(model.updates)
                 }
             }
         }

@@ -14,8 +14,7 @@ import androidx.compose.material3.carousel.HorizontalUncontainedCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -67,11 +66,7 @@ private fun DiscoverCarousel(
     onHistory: (HistoryEntry) -> Unit,
     onMore: (() -> Unit)?
 ) {
-    val textHeight = with(LocalDensity.current) {
-        MaterialTheme.typography.titleSmall.lineHeight.toDp() * 2 +
-            MaterialTheme.typography.labelMedium.lineHeight.toDp()
-    }
-    val cardHeight = 216.dp + textHeight + 44.dp
+    val cardHeight = 256.dp
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp,end = 12.dp)) {
             Text(feed.label,style = MaterialTheme.typography.titleLarge,modifier = Modifier.weight(1f).padding(top = 8.dp))
@@ -79,7 +74,7 @@ private fun DiscoverCarousel(
         }
         if(section.loading && section.items.isEmpty()) {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(3) { Surface(Modifier.width(168.dp).height(cardHeight),shape = MaterialTheme.shapes.extraLarge,color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                items(3) { Surface(Modifier.width(168.dp).height(cardHeight),shape = RectangleShape,color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     // Placeholder cards keep the layout steady; the pull-to-refresh indicator shows loading.
                 } }
             }
@@ -91,14 +86,17 @@ private fun DiscoverCarousel(
             ) { index ->
                 val manga = section.items[index]
                 val entry = history.firstOrNull { it.manga.id == manga.id }
-                Surface(onClick = { if(entry != null) onHistory(entry) else onOpen(manga) },modifier = Modifier.fillMaxHeight().maskClip(MaterialTheme.shapes.extraLarge),shape = MaterialTheme.shapes.extraLarge,color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Column {
-                        Cover(manga,Modifier.fillMaxWidth().height(216.dp))
-                        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 28.dp),verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(manga.title,style = MaterialTheme.typography.titleSmall,maxLines = 2,minLines = 2,overflow = TextOverflow.Ellipsis)
-                            Text(entry?.let { "Chapter ${it.chapter.number} · Page ${it.page + 1}" } ?: progress[manga.id]?.let { "Chapter ${it.number}" } ?: manga.format.replaceFirstChar { it.uppercase() },style = MaterialTheme.typography.labelMedium,maxLines = 1,overflow = TextOverflow.Ellipsis,color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                Surface(onClick = { if(entry != null) onHistory(entry) else onOpen(manga) },modifier = Modifier.fillMaxHeight().maskClip(RectangleShape),shape = RectangleShape,color = MaterialTheme.colorScheme.surfaceContainer) {
+                    TitledCover(manga, Modifier.fillMaxSize(),
+                        subtitle = entry?.let { "Ch. ${it.chapter.number} · p. ${it.page + 1}" }
+                            ?: manga.latestChapterNumber.takeIf {
+                                it.isNotBlank() && (feed == DiscoverFeed.UPDATED || feed == DiscoverFeed.UPDATES)
+                            }?.let { "Chapter $it" }
+                            ?: progress[manga.id]?.let { "Chapter ${it.number}" }
+                            ?: manga.format.replaceFirstChar { it.uppercase() },
+                        updateTime = if (feed == DiscoverFeed.UPDATED || feed == DiscoverFeed.UPDATES)
+                            updateAge(manga.updatedAt) else null)
+
                 }
             }
         }

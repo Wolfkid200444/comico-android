@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun LibraryScreen(state: AppState, model: ReaderViewModel) {
     val options = state.libraryOptions
+    val allTitles = libraryTitles(state)
     val collection = state.libraryCollections.firstOrNull { it.id == options.collection }
     val titles = remember(state.library, state.libraryQuery, options, state.progress, state.history, state.offlineChapters, collection) {
         visibleLibrary(state, collection?.mangaIds)
@@ -38,7 +39,7 @@ fun LibraryScreen(state: AppState, model: ReaderViewModel) {
     var selected by remember(state.account.user?.id) { mutableStateOf(emptySet<String>()) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(options.collection, state.account.user?.id) { selected = emptySet(); selecting = false }
-    LaunchedEffect(state.library) { selected = selected.intersect(state.library.map { it.id }.toSet()) }
+    LaunchedEffect(allTitles) { selected = selected.intersect(allTitles.map { it.id }.toSet()) }
     val toggle: (String) -> Unit = { id -> selected = if (id in selected) selected - id else selected + id }
     val longClick: (String) -> Unit = { id -> selecting = true; toggle(id) }
     if (collectionEditor) CollectionEditor(editing, model) {
@@ -74,11 +75,11 @@ fun LibraryScreen(state: AppState, model: ReaderViewModel) {
                 if (options.showTabs) ScrollableTabRow(selectedTabIndex = selectedTab, modifier = Modifier.weight(1f),
                     edgePadding = 16.dp, containerColor = MaterialTheme.colorScheme.background) {
                     Tab(selected = collection == null, onClick = { model.libraryOptions(options.copy(collection = null)) },
-                        text = { Text(if (options.showCounts) "All · ${state.library.size}" else "All", maxLines = 1) })
+                        text = { Text(if (options.showCounts) "All · ${allTitles.size}" else "All", maxLines = 1) })
                     state.libraryCollections.forEach { item ->
                         Tab(selected = collection?.id == item.id,
                             onClick = { model.libraryOptions(options.copy(collection = item.id)) },
-                            text = { Text(item.name + if (options.showCounts) " · ${state.library.count { it.id in item.mangaIds }}" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                            text = { Text(item.name + if (options.showCounts) " · ${allTitles.count { it.id in item.mangaIds }}" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) })
                     }
                 }
                 if (!options.showTabs) Box(Modifier.weight(1f)) {
@@ -127,21 +128,22 @@ fun LibraryScreen(state: AppState, model: ReaderViewModel) {
                     Text(error, color = MaterialTheme.colorScheme.error)
                 } }
                 items(titles, key = { it.id }) { manga ->
-                    LibraryTitle(manga, state.progress[manga.id], options, state.offlineChapters.count { it.manga.id == manga.id },
+                    LibraryTitle(manga, state.resumeChapter(manga.id), options, state.offlineChapters.count { it.manga.id == manga.id },
                         selecting, manga.id in selected,
                         onClick = { if (selecting) toggle(manga.id) else model.open(manga) },
                         onLongClick = { longClick(manga.id) },
                         onAddToCollection = { selected = setOf(manga.id); selecting = true; addingToCollection = true },
-                        onContinue = { model.open(manga); state.progress[manga.id]?.let(model::read) })
+                        onContinue = { model.open(manga); state.resumeChapter(manga.id)?.let(model::read) })
                 }
                 if (titles.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(if (collection != null) Icons.Rounded.FolderOpen else Icons.Rounded.BookmarkBorder,
                             null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text(if (state.library.isEmpty()) "Your library is empty" else if (options.filterCount > 0 || state.libraryQuery.isNotBlank()) "No matching titles" else "This collection is empty",
+                        Text(if (state.offline && options.filterCount == 0 && collection == null) "No saved chapters available" else if (allTitles.isEmpty()) "Your library is empty" else if (options.filterCount > 0 || state.libraryQuery.isNotBlank()) "No matching titles" else "This collection is empty",
                             style = MaterialTheme.typography.titleMedium)
-                        Text(if (state.library.isEmpty()) "Save a manga to start your library."
+                        Text(if (state.offline && options.filterCount == 0 && collection == null) "Chapters saved while reading or downloaded will appear here."
+                            else if (allTitles.isEmpty()) "Save a manga to start your library."
                             else if (options.filterCount > 0 || state.libraryQuery.isNotBlank()) "Try clearing your filters or search."
                             else "Select titles from All, then add them to this collection.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -46,11 +46,18 @@ fun JSONObject.libraryOptions(): LibraryOptions {
     )
 }
 
+fun AppState.resumeChapter(mangaId: String): Chapter? =
+    progress[mangaId]?.takeIf { !offline || offlineChapters.any { saved -> saved.chapter.id == it.id } }
+        ?: if (offline) offlineChapters.firstOrNull { it.manga.id == mangaId }?.chapter else null
+
+fun libraryTitles(state: AppState): List<Manga> =
+    (state.library + state.offlineChapters.map { it.manga }).distinctBy { it.id }
+
 fun visibleLibrary(state: AppState, collectionIds: Set<String>? = null): List<Manga> {
     val options = state.libraryOptions
     val readTimes = state.history.groupBy { it.manga.id }.mapValues { (_, entries) -> entries.maxOf { it.readAt } }
-    val items = filterLibrary(state.library, state.libraryQuery).filter {
-        (!options.downloadedOnly || state.offlineChapters.any { saved -> saved.manga.id == it.id }) &&
+    val items = filterLibrary(libraryTitles(state), state.libraryQuery).filter {
+        (!(options.downloadedOnly || state.offline) || state.offlineChapters.any { saved -> saved.manga.id == it.id }) &&
         (collectionIds == null || it.id in collectionIds) &&
             (options.format == null || it.format.equals(options.format, true)) &&
             (options.status == null || it.status.equals(options.status, true)) &&

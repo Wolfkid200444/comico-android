@@ -12,7 +12,7 @@ data class HistoryEntry(val manga: Manga, val chapter: Chapter, val page: Int, v
     fun progressPayload() = JSONObject().put("chapterId",chapter.id).put("page",page).put("pageCount",pageCount).put("completed",pageCount > 0 && page >= pageCount - 1)
     fun toJson() = JSONObject().put("manga",manga.toJson()).put("chapter",chapter.toJson()).put("page",page).put("pageCount",pageCount).put("readAt",readAt)
 }
-fun Manga.toJson() = JSONObject().put("id",id).put("title",title).put("coverUrl",cover).put("status",status).put("format",format).put("description",description).put("contentRating",rating).put("tags",JSONArray(tags.map { JSONObject().put("name",it) })).put("authors",JSONArray(credits.map { JSONObject().put("name",it.name).put("role",it.role) }))
+fun Manga.toJson() = JSONObject().put("latestChapter", JSONObject().put("number",latestChapterNumber).put("publishedAt",updatedAt)).put("updatedAt",updatedAt).put("id",id).put("title",title).put("coverUrl",cover).put("status",status).put("format",format).put("description",description).put("contentRating",rating).put("tags",JSONArray(tags.map { JSONObject().put("name",it) })).put("authors",JSONArray(credits.map { JSONObject().put("name",it.name).put("role",it.role) }))
 fun Chapter.toJson() = JSONObject().put("id",id).put("number",number).put("title",title).put("language",language).put("scanlationGroup",group).put("externalUrl",external).put("scanlationGroupId",groupId).put("sourceId",sourceId)
 fun JSONObject.historyEntry(): HistoryEntry {
     val manga = JSONObject(getJSONObject("manga").toString()).apply {
@@ -23,7 +23,10 @@ fun JSONObject.historyEntry(): HistoryEntry {
     }.chapter()
     return HistoryEntry(manga,chapter,optInt("page").coerceAtLeast(0),optInt("pageCount").coerceAtLeast(0),getString("readAt"))
 }
-fun JSONObject.followedUpdateManga(): Manga = optJSONObject("manga")?.manga() ?: Manga(getString("mangaId"),getString("mangaTitle"),absoluteUrl(optString("coverUrl")),optString("status"),optString("format"),emptyList(),rating = optString("contentRating","safe"))
+fun JSONObject.followedUpdateManga(): Manga {
+    val manga = optJSONObject("manga")?.manga() ?: Manga(getString("mangaId"),getString("mangaTitle"),absoluteUrl(optString("coverUrl")),optString("status"),optString("format"),emptyList(),rating = optString("contentRating","safe"))
+    return manga.copy(updatedAt = manga.updatedAt.ifBlank { optString("updatedAt").takeUnless { it == "null" }.orEmpty() })
+}
 fun mergeHistory(remote: List<HistoryEntry>, local: List<HistoryEntry>) = (remote + local).groupBy { it.chapter.id }.values.map { entries -> entries.maxBy { runCatching { Instant.parse(it.readAt) }.getOrDefault(Instant.EPOCH) } }.sortedByDescending { runCatching { Instant.parse(it.readAt) }.getOrDefault(Instant.EPOCH) }
 data class LeaderboardEntry(val id: String, val name: String, val username: String, val image: String, val level: Int, val exp: Long)
 fun JSONObject.leaderboardEntry() = LeaderboardEntry(getString("id"),optString("name"),optString("username"),optString("image").takeUnless { it == "null" }.orEmpty(),optInt("level"),optLong("exp"))
@@ -65,3 +68,17 @@ fun visibleDiscoverFeeds(signedIn: Boolean): List<DiscoverFeed> =
     (if(signedIn) listOf(DiscoverFeed.UPDATES,DiscoverFeed.HISTORY) else emptyList()) + DiscoverFeed.entries.filterNot { it.accountOnly }
 
 fun filterLibrary(library: List<Manga>, query: String): List<Manga> = library.filter { query.isBlank() || it.title.contains(query.trim(),ignoreCase = true) }
+
+fun updateAge(value: String, now: Instant = Instant.now()): String? {
+    val updated = runCatching { Instant.parse(value) }.getOrNull() ?: return null
+    if (updated.isAfter(now.plusSeconds(60)))
+        return updated.atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+    val minutes = java.time.Duration.between(updated, now).toMinutes().coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "Just now"
+        minutes < 60 -> "${minutes}m ago"
+        minutes < 1440 -> "${minutes / 60}h ago"
+        minutes < 10080 -> "${minutes / 1440}d ago"
+        else -> updated.atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+    }
+}

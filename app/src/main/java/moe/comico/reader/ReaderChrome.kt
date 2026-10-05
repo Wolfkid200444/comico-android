@@ -73,7 +73,7 @@ fun ReaderHeader(state: AppState, model: ReaderViewModel, onChapters: () -> Unit
                 Icon(Icons.Rounded.ExpandMore, "Choose chapter")
             }
         }, navigationIcon = { IconButton(onClick = model::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to manga") } },
-        actions = { IconButton(onClick = { model.discussion.open(DiscussionTarget(chapter.id,
+        actions = { IconButton(enabled = !state.offline, onClick = { model.discussion.open(DiscussionTarget(chapter.id,
             "${state.selected?.title.orEmpty()} · Chapter ${chapter.number}", chapter = true)) }) {
             Icon(Icons.Rounded.ChatBubbleOutline, "Chapter comments")
         } })

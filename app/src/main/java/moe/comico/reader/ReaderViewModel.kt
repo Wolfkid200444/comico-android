@@ -52,7 +52,7 @@ fun AppState.effectiveReaderPreferences(): ReaderPreferences = readerOverrides[s
 
 class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private val accountCookies = AccountCookieJar(application)
-    private val api = ComicoApi(accountCookies)
+    private val api = ComicoApi(accountCookies, networkAvailable = { !mutable.value.offline })
     val discussion = DiscussionController(api, viewModelScope, application)
     val updates = AppUpdateController(application, viewModelScope)
     private val nativeRepository = NativeReaderRepository(api)
@@ -73,6 +73,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     private var chapterGroupsJob: Job? = null
     private var sourceJob: Job? = null
     private var readerJob: Job? = null
+    private var imageCacheJob: Job? = null
     private var localZipEntry: OfflineChapter? = null
     private val commentChecks = kotlinx.coroutines.sync.Semaphore(2)
     suspend fun checkChapterComments(chapter: Chapter) {
@@ -99,6 +100,9 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             mutable.update { it.copy(offline = !connected) }
             if (!connected) {
                 discoverJobs.values.forEach { it.cancel() }
+                imageCacheJob?.cancel()
+                discussion.close()
+                if (mutable.value.tab in listOf("Discover", "Search", "Feed", "Leaderboard")) mutable.update { it.copy(tab = "Library") }
                 listOf(accountRefreshJob, syncJob, progressSyncJob, accountDataJob, feedPageJob, catalogJob, detailJob, chaptersJob, chapterGroupsJob, sourceJob).forEach { it?.cancel() }
                 mutable.update { it.copy(loading = false, error = null, syncLoading = false, syncError = null,
                     chapterLoading = false, chapterError = null, chapterGroupsLoading = false, chapterGroupsError = null,
@@ -106,6 +110,8 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                     account = it.account.copy(loading = false, error = null),
                     discoverSections = it.discoverSections.mapValues { (_, section) -> section.copy(loading = false, error = null) },
                     feedPage = it.feedPage.copy(loading = false, error = null)) }
+                if (mutable.value.reader != null && mutable.value.offlineChapters.any { it.chapter.id == mutable.value.reader?.id })
+                    loadReader()
             } else if (changed) {
                 refreshAccount()
                 tab(mutable.value.tab)
@@ -133,14 +139,16 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             relativeDates = prefs.getBoolean("relativeDates", false),
             alwaysShowNavLabels = prefs.getBoolean("alwaysShowNavLabels", true)
         )) }
-        loadOwner(null)
+        loadOwner(prefs.getString("localLibraryOwner", null))
         mutable.update { it.copy(offline = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
             ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) != true) }
+        if (mutable.value.offline) mutable.update { it.copy(tab = "Library") }
         connectivity.registerDefaultNetworkCallback(networkCallback)
         loadDiscover()
         refreshAccount()
     }
     fun tab(value: String) {
+        if (mutable.value.offline && value in listOf("Search", "Feed", "Leaderboard")) return
         val reset = value == "Discover" && mutable.value.query.isNotEmpty()
         mutable.update { it.copy(tab = value, query = if(reset) "" else it.query) }
         if(value == "Discover") loadDiscover()
@@ -150,7 +158,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
     }
     fun useDefaultDownloadFolder() {
         if (mutable.value.downloadBusy) return
-        offlineStore.resetFolder(mutable.value.account.user?.id)
+        offlineStore.resetFolder(activeOwner)
         mutable.update { it.copy(downloadFolder = null, downloadMessage = "New downloads will use app storage.") }
     }
     @OptIn(coil.annotation.ExperimentalCoilApi::class)
@@ -186,8 +194,8 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun chooseDownloadFolder(uri: android.net.Uri): Boolean {
-        return runCatching { offlineStore.chooseFolder(mutable.value.account.user?.id, uri) }.onSuccess {
-            mutable.update { it.copy(downloadFolder = offlineStore.folder(it.account.user?.id), downloadMessage = "Download folder saved.") }
+        return runCatching { offlineStore.chooseFolder(activeOwner, uri) }.onSuccess {
+            mutable.update { it.copy(downloadFolder = offlineStore.folder(activeOwner), downloadMessage = "Download folder saved.") }
         }.onFailure { error -> mutable.update { it.copy(downloadMessage = error.message) } }.isSuccess
     }
     fun downloadChapter(chapter: Chapter, importedZip: android.net.Uri? = null) =
@@ -220,10 +228,10 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         val before = mutable.value
         val manga = before.selected ?: return
         if (before.downloadBusy) return
-        val owner = before.account.user?.id
+        val owner = activeOwner
         val message = when {
             importedZip == null && before.offline -> "Connect to the internet to download chapters."
-            importedZip == null && owner == null -> "Sign in to download chapters."
+            importedZip == null && before.account.user == null -> "Sign in to download chapters."
             else -> null
         }
         if (message != null) { mutable.update { it.copy(downloadMessage = message) }; return }
@@ -238,7 +246,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                 val queue = chapterDownloadQueue(entries, before.offlineChapters)
                 skipped = entries.size - queue.size
                 for ((index, chapter) in queue.withIndex()) {
-                    if (mutable.value.account.user?.id != owner) throw CancellationException("Account changed.")
+                    if (activeOwner != owner) throw CancellationException("Account changed.")
                     mutable.update { it.copy(downloadMessage = "Downloading ${index + 1}/${queue.size} · Chapter ${chapter.number}") }
                     val file = withContext(Dispatchers.IO) { java.io.File.createTempFile("chapter-", ".zip", getApplication<Application>().cacheDir) }
                     try {
@@ -249,11 +257,11 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                             } ?: throw java.io.IOException("Couldn't open the selected ZIP.")
                         }
                         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                        if (mutable.value.account.user?.id != owner) throw CancellationException("Account changed.")
+                        if (activeOwner != owner) throw CancellationException("Account changed.")
                         val source = before.mangaSources.firstOrNull { it.id == chapter.sourceId }?.name ?: chapter.sourceId
                         offlineStore.save(owner, manga, chapter, source, file)
                         completed++
-                        mutable.update { if (it.account.user?.id == owner) it.copy(offlineChapters = offlineStore.entries(owner)) else it }
+                        mutable.update { if (activeOwner == owner) it.copy(offlineChapters = offlineStore.entries(owner)) else it }
                     } catch (e: CancellationException) { throw e }
                     catch (e: Exception) {
                         if (importedZip == null && e.message?.startsWith("Comico already marks") == true) skipped++ else throw e
@@ -295,11 +303,11 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         read(entry.chapter)
     }
     fun removeOfflineChapter(entry: OfflineChapter) {
-        val owner = mutable.value.account.user?.id
+        val owner = activeOwner
         viewModelScope.launch {
             try {
                 offlineStore.delete(owner, entry)
-                mutable.update { if (it.account.user?.id == owner) it.copy(offlineChapters = offlineStore.entries(owner), downloadMessage = "Download removed.") else it }
+                mutable.update { if (activeOwner == owner) it.copy(offlineChapters = offlineStore.entries(owner), downloadMessage = "Download removed.") else it }
             } catch (e: Exception) { mutable.update { it.copy(downloadMessage = e.message ?: "Couldn't delete this download.") } }
         }
     }
@@ -327,7 +335,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         persistCollections()
     }
     fun updateCollectionTitles(collectionId: String, mangaIds: Set<String>, add: Boolean) {
-        val ids = mangaIds.intersect(mutable.value.library.map { it.id }.toSet())
+        val ids = mangaIds.intersect(libraryTitles(mutable.value).map { it.id }.toSet())
         mutable.update { it.copy(libraryCollections = it.libraryCollections.map { collection ->
             if (collection.id != collectionId) collection else collection.copy(
                 mangaIds = if (add) collection.mangaIds + ids else collection.mangaIds - ids)
@@ -539,8 +547,26 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                 val session = nativeRepository.open(chapter.id, preferred, preferences.proxy)
                 mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = false, session = session, notice = notice, page = it.nativeReader.page.coerceIn(0,session.pages.lastIndex))) }
                 recordHistory(chapter,mutable.value.nativeReader.page,session.pages.size)
+                cacheOpenedChapter(chapter, session)
             } catch(e: CancellationException) { throw e }
             catch(e: Exception) { mutable.update { it.copy(nativeReader = it.nativeReader.copy(loading = false, error = e.message ?: "Couldn't load this chapter. Try another source or proxy method.")) } }
+        }
+    }
+    private fun cacheOpenedChapter(chapter: Chapter, session: ReaderSession) {
+        val manga = mutable.value.selected ?: return
+        val owner = activeOwner
+        imageCacheJob?.cancel()
+        imageCacheJob = viewModelScope.launch {
+            val archive = java.io.File(getApplication<Application>().cacheDir, "chapter-${java.util.UUID.randomUUID()}.zip")
+            try {
+                api.cacheReaderImages(session, archive)
+                if (activeOwner != owner || mutable.value.offline) return@launch
+                offlineStore.save(owner, manga, chapter, session.source, archive)
+                mutable.update { if (activeOwner == owner) it.copy(offlineChapters = offlineStore.entries(owner),
+                    nativeReader = if (it.reader?.id == chapter.id) it.nativeReader.copy(notice = "Saved for offline reading") else it.nativeReader) else it }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Reading stays available if there is not enough storage or an image cannot be cached. */ }
+            finally { archive.delete() }
         }
     }
     fun readerPage(page: Int) {
@@ -580,6 +606,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun signIn(identifier: String, password: String) {
+        if (mutable.value.offline) return
         if(mutable.value.account.loading || mutable.value.syncLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(account = AccountState(loading = true)) }
@@ -589,6 +616,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         }
     }
     fun register(username: String, name: String, email: String, password: String) {
+        if (mutable.value.offline) return
         if(mutable.value.account.loading || mutable.value.syncLoading) return
         viewModelScope.launch {
             mutable.update { it.copy(account = AccountState(loading = true)) }
@@ -621,7 +649,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             obj.keys().asSequence().associateWith { obj.getBoolean(it) }
         } }.getOrDefault(emptyMap())
         mutable.update { it.copy(chapterReadMarks = marks) }
-        mutable.update { it.copy(offlineChapters = offlineStore.entries(owner), downloadFolder = offlineStore.folder(it.account.user?.id), downloadMessage = null) }
+        mutable.update { it.copy(offlineChapters = offlineStore.entries(owner), downloadFolder = offlineStore.folder(activeOwner), downloadMessage = null) }
         val library = runCatching { JSONArray(prefs.getString(ownerKey("library"),"[]")).objects().map { it.manga() } }.getOrDefault(emptyList())
         val collections = runCatching { JSONArray(prefs.getString(ownerKey("libraryCollections"), "[]")).objects().map { it.libraryCollection() } }.getOrDefault(emptyList())
         val options = runCatching { JSONObject(prefs.getString(ownerKey("libraryOptions"), "{}")!!).libraryOptions() }.getOrDefault(LibraryOptions())
@@ -631,6 +659,8 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress.filterNot { (id, chapter) -> id.startsWith("local-") || chapter.id.startsWith("local-") },syncError = null,lastSync = null,publicProfile = null,comments = emptyList(),profileBio = "",profileSettings = ProfileEdit(),accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
     }
     private fun activateAccount(user: AccountUser?) {
+        imageCacheJob?.cancel()
+        prefs.edit().apply { if (user == null) remove("localLibraryOwner") else putString("localLibraryOwner", user.id) }.apply()
         progressSyncJob?.cancel();accountDataJob?.cancel()
         if(activeOwner != user?.id) loadOwner(user?.id)
         if(user != null) { syncAccount();loadAccountData() }
@@ -813,7 +843,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         viewModelScope.launch {
             mutable.update { it.copy(syncLoading = true,syncError = null) }
             try {
-                if(activeOwner != null) api.clearHistory()
+                if(mutable.value.account.user != null && !mutable.value.offline) api.clearHistory()
                 mutable.update { it.copy(history = emptyList(),progress = emptyMap()) }
                 persistHistory()
                 prefs.edit().apply {

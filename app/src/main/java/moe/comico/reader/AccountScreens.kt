@@ -77,7 +77,11 @@ fun LeaderboardScreen(state: AppState, model: ReaderViewModel) {
 fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, onSelect: (String) -> Unit) {
     val signedIn = state.account.user != null
     val sections = listOf("Account", "Profile", "Comments", "Reading", "Appearance", "Downloads", "Data and storage", "Leaderboard", "Help", "About")
-    LaunchedEffect(signedIn) { if(!signedIn && selected in listOf("Profile", "Comments")) onSelect("Menu") }
+    LaunchedEffect(signedIn, state.offline, selected) {
+        if ((state.offline && selected in listOf("Account", "Profile", "Comments", "Leaderboard")) ||
+            (!signedIn && selected in listOf("Profile", "Comments"))) onSelect("Menu")
+    }
+    if (selected == "About") { AboutScreen(state, model.updates); return }
     if (selected == "Downloads") { DownloadsScreen(state, model); return }
     if (selected == "Data and storage") { StorageSettingsScreen(state, model); return }
     if (selected == "Comments" && signedIn) {
@@ -87,7 +91,8 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
     SyncRefreshBox(state, model, enabled = false) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),verticalArrangement = Arrangement.spacedBy(20.dp)) {
         if(selected == "Menu") items(sections) { section ->
-            val enabled = signedIn || section !in listOf("Profile", "Comments")
+            val enabled = (!state.offline || section !in listOf("Account", "Profile", "Comments", "Leaderboard")) &&
+                (signedIn || section !in listOf("Profile", "Comments"))
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
                 tooltip = { PlainTooltip { Text(settingsTooltip(section)) } },
@@ -108,7 +113,7 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
                         "Help" -> Icons.Rounded.HelpOutline
                         else -> Icons.Rounded.Info
                     }, null) },
-                    supportingContent = { if(!enabled) Text("Sign in to access") },
+                    supportingContent = { if(!enabled) Text(if (state.offline) "Internet required" else "Sign in to access") },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, null) })
             }
             }
@@ -118,19 +123,8 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
             "Profile" -> item { IdentityPanel(state,model) }
             "Reading" -> item { Text("Global reader defaults",style = MaterialTheme.typography.titleLarge);Spacer(Modifier.height(16.dp));GlobalReaderOptions(state,model);Spacer(Modifier.height(16.dp));Text("Individual manga can override each global setting.") }
             "Appearance" -> item { AppearancePanel(state,model) }
-            "Help" -> item {
-                Text("Save titles to your library, then use Start reading or Resume on manga details. Reader settings can apply globally or to one manga.")
-                Text("Account library and history sync when signed in. Use Data and storage to retry sync or import guest data.")
-                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                TextButton(onClick = { uriHandler.openUri("https://github.com/Wolfkid200444/comico-android/issues") }) { Text("Report an issue") }
-            }
-            "About" -> item {
-                Text("An independent Kotlin client for comico.moe, built with Jetpack Compose and Material Design 3.")
-                Text("Version ${BuildConfig.VERSION_NAME}")
-                UpdateSettings(model.updates)
-                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                TextButton(onClick = { uriHandler.openUri("https://github.com/Wolfkid200444/comico-android") }) { Text("Source code") }
-            }
+            "Help" -> item { HelpContent(state.offline, onSelect) }
+
         }
     }
     }
@@ -155,7 +149,7 @@ fun DataPanel(state: AppState, model: ReaderViewModel) {
         Text("Account data",style = MaterialTheme.typography.titleLarge)
         SyncStatus(state,model)
         Text("Your account library and reading history sync with comico.moe. Guest data stays separate unless you import it. Reader settings are stored on this device.")
-        if (state.account.user != null) OutlinedButton(onClick = model::importGuestData,enabled = !state.syncLoading && !state.account.loading) { Text("Add guest library and history to this account") }
+        if (state.account.user != null) OutlinedButton(onClick = model::importGuestData,enabled = !state.offline && !state.syncLoading && !state.account.loading) { Text("Add guest library and history to this account") }
         OutlinedButton(onClick = { export.launch("comico-data.json") }) { Text("Export library, history and reader defaults") }
         OutlinedButton(onClick = { clear = true },enabled = !state.syncLoading && !state.account.loading) { Text("Clear reading history") }
         message?.let { Text(it) }
