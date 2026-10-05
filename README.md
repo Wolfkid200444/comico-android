@@ -8,12 +8,14 @@ An independent Android app for [comico.moe](https://comico.moe). Android 8.0+.
 
 <table>
 <tr>
-<th>Search</th><th>Reader settings</th><th>Statistics</th>
+<th>Search</th><th>Library</th><th>Profile</th><th>Reader settings</th><th>Statistics</th>
 </tr>
 <tr>
-<td><img src="docs/screenshots/search.png" alt="Search results with manga cover cards" width="240"></td>
-<td><img src="docs/screenshots/reading.png" alt="Reader modes, navigation, and source preferences" width="240"></td>
-<td><img src="docs/screenshots/statistics.png" alt="Library and reading statistics with a status chart" width="240"></td>
+<td><img src="docs/screenshots/search.png" alt="Search results with manga cover cards" width="160"></td>
+<td><img src="docs/screenshots/library.png" alt="Library search with a saved title and collection controls" width="160"></td>
+<td><img src="docs/screenshots/profile.png" alt="Profile with badges and reading activity" width="160"></td>
+<td><img src="docs/screenshots/reading.png" alt="Reader modes, navigation, and source preferences" width="160"></td>
+<td><img src="docs/screenshots/statistics.png" alt="Library and reading statistics with a status chart" width="160"></td>
 </tr>
 </table>
 
