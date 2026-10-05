@@ -10,14 +10,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun DownloadFolderButton(state: AppState, model: ReaderViewModel) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(model::chooseDownloadFolder) }
-    TextButton(onClick = { picker.launch(state.downloadFolder?.let(Uri::parse)) }, enabled = !state.downloadBusy) {
+    TextButton(onClick = { picker.launch(state.downloadFolder?.let(Uri::parse)) }, enabled = !state.downloadBusy && state.downloadQueue.none { it.active }) {
         Icon(Icons.Rounded.FolderOpen, null)
         Text(if (state.downloadFolder == null) "Choose download folder" else "Change download folder", Modifier.padding(start = 8.dp))
     }
@@ -61,19 +63,68 @@ fun ChapterDownloadAction(state: AppState, model: ReaderViewModel, chapter: Chap
 
 @Composable
 fun DownloadStatus(state: AppState) {
-    if (state.downloadBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    state.downloadMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    val task = state.downloadQueue.lastOrNull { it.manga.id == state.selected?.id }
+    if (task?.active == true || (state.downloadBusy && state.downloadMessageMangaId == state.selected?.id)) LinearProgressIndicator(Modifier.fillMaxWidth())
+    val message = chapterDownloadMessage(state.downloadQueue, state.selected?.id)
+        ?: state.downloadMessage.takeIf { state.downloadMessageMangaId == state.selected?.id }
+    message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 }
 
 @Composable
 fun DownloadsScreen(state: AppState, model: ReaderViewModel) {
     val zipPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(model::openOfflineZip) }
+    var queue by rememberSaveable { mutableStateOf(state.downloadQueue.any { it.status != "Completed" }) }
+    val context = LocalContext.current
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    fun notificationsAllowed() = android.os.Build.VERSION.SDK_INT < 33 ||
+        context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    var notificationsEnabled by remember { mutableStateOf(notificationsAllowed()) }
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) notificationsEnabled = notificationsAllowed()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(queue, { queue = true }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Queue") }
+                SegmentedButton(!queue, { queue = false }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Saved") }
+            }
+        }
+        if (queue) {
+            if (!notificationsEnabled) item {
+                Text("Enable notifications to see download progress outside the app.", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = {
+                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
+                }) { Text("Notification settings") }
+            }
+            if (state.downloadQueue.isEmpty()) item { Text("No downloads queued.") }
+            items(state.downloadQueue, key = { it.id }) { task ->
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(task.manga.title, style = MaterialTheme.typography.titleMedium)
+                        Text(task.status, color = MaterialTheme.colorScheme.primary)
+                        Text("${task.completed} saved · ${task.skipped} skipped · ${task.chapters.size} remaining",
+                            style = MaterialTheme.typography.bodySmall)
+                        if (task.active) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        task.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        if (task.active) TextButton(onClick = { model.stopDownload(task.id) }) {
+                            Icon(Icons.Rounded.Stop, null); Text("Stop manga", Modifier.padding(start = 8.dp))
+                        } else if (task.status != "Completed") TextButton(onClick = { model.retryDownload(task.id) }) {
+                            Icon(Icons.Rounded.Refresh, null); Text("Retry", Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            }
+        } else {
         item {
             TextButton(onClick = { zipPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }, enabled = !state.downloadBusy) {
                 Icon(Icons.Rounded.FolderZip, null); Text("Open chapter ZIP", Modifier.padding(start = 8.dp))
             }
-            DownloadStatus(state)
+            if (state.downloadMessageMangaId == null) state.downloadMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
         if (state.offlineChapters.isEmpty()) item { Text("No downloaded chapters yet. Open a manga's chapter list and tap its download icon.") }
         items(state.offlineChapters, key = { it.chapter.id }) { entry ->
@@ -91,6 +142,7 @@ fun DownloadsScreen(state: AppState, model: ReaderViewModel) {
                         dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } })
                 }
             }
+        }
         }
     }
 }

@@ -19,7 +19,7 @@ fun moveLibraryCollection(collections: List<LibraryCollection>, id: String, dire
 
 fun collectionNameError(name: String, collections: List<LibraryCollection>, editingId: String? = null): String? = when {
     name.trim().isEmpty() -> "Enter a collection name."
-    name.trim().length > 60 -> "Use 60 characters or fewer."
+    name.trim().length > 120 -> "Use 120 characters or fewer."
     collections.any { it.id != editingId && it.name.equals(name.trim(), true) } -> "A collection with that name already exists."
     else -> null
 }

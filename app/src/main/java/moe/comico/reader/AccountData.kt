@@ -1,5 +1,6 @@
 package moe.comico.reader
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -32,7 +33,9 @@ data class LeaderboardEntry(val id: String, val name: String, val username: Stri
 fun JSONObject.leaderboardEntry() = LeaderboardEntry(getString("id"),optString("name"),optString("username"),optString("image").takeUnless { it == "null" }.orEmpty(),optInt("level"),optLong("exp"))
 data class AccountComment(
     val id: String, val body: String, val createdAt: String, val mangaTitle: String,
-    val context: String = "", val coverUrl: String = "", val href: String = ""
+    val context: String = "", val coverUrl: String = "", val href: String = "",
+    val likes: Int = 0, val dislikes: Int = 0, val vote: Int = 0, val deleted: Boolean = false,
+    val reactions: List<CommentReaction> = emptyList(), val parentId: String? = null, val votesLoaded: Boolean = false
 )
 fun JSONObject.accountComment(): AccountComment {
     fun text(key: String) = optString(key).takeUnless { it == "null" }.orEmpty()
@@ -41,8 +44,30 @@ fun JSONObject.accountComment(): AccountComment {
     val chapterNumber = chapter?.optString("number")?.takeUnless { it == "null" }.orEmpty()
     val fallback = listOf(mangaTitle, chapterNumber.takeIf { it.isNotBlank() }?.let { "Chapter $it" }.orEmpty())
         .filter { it.isNotBlank() }.joinToString(" · ")
-    return AccountComment(getString("id"),text("body"),text("createdAt"),mangaTitle,
-        text("context").ifBlank { fallback }, absoluteUrl(text("coverUrl")), text("href"))
+    val comment = discussionComment()
+    return AccountComment(getString("id"),comment.body,text("createdAt"),mangaTitle,
+        text("context").ifBlank { fallback }, absoluteUrl(text("coverUrl")), text("href"),
+        comment.likes, comment.dislikes, comment.vote, comment.deleted, comment.reactions, comment.parentId, has("votes"))
+}
+
+fun AccountComment.discussionTarget(): DiscussionTarget? {
+    val url = runCatching { (if (href.startsWith("/")) BASE_URL + href else href).toHttpUrl() }.getOrNull() ?: return null
+    if (url.host != "comico.moe" || url.pathSegments.size != 2) return null
+    return when (url.pathSegments[0]) {
+        "reader" -> DiscussionTarget(url.pathSegments[1], context, chapter = true)
+        "manga" -> DiscussionTarget(url.pathSegments[1], context)
+        else -> null
+    }
+}
+fun AccountComment.withDiscussion(comment: DiscussionComment) = copy(body = comment.body, likes = comment.likes,
+    dislikes = comment.dislikes, vote = comment.vote, deleted = comment.deleted, reactions = comment.reactions,
+    parentId = comment.parentId, votesLoaded = true)
+fun List<DiscussionComment>.findComment(id: String): DiscussionComment? {
+    for (comment in this) {
+        if (comment.id == id) return comment
+        comment.replies.findComment(id)?.let { return it }
+    }
+    return null
 }
 
 fun HistoryEntry.isLocalChapter() = manga.id.startsWith("local-") || chapter.id.startsWith("local-")

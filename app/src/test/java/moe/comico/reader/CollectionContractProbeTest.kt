@@ -13,7 +13,8 @@ class CollectionContractProbeTest {
     @Test fun collectionNamesRejectBlankLongAndDuplicateNames() {
         val existing = listOf(LibraryCollection("1", "Favorites"))
         assertNotNull(collectionNameError("  ", existing))
-        assertNotNull(collectionNameError("a".repeat(61), existing))
+        assertNull(collectionNameError("a".repeat(120), existing))
+        assertNotNull(collectionNameError("a".repeat(121), existing))
         assertNotNull(collectionNameError(" favorites ", existing))
         assertNull(collectionNameError("Favorites", existing, "1"))
         assertNull(collectionNameError("New", existing))

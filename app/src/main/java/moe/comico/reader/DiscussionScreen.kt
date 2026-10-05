@@ -33,6 +33,8 @@ private const val COMMENT_POLICY = "Be respectful. Do not post spam, harassment,
 @Composable
 fun DiscussionDialog(state: DiscussionState, controller: DiscussionController, signedIn: Boolean) {
     val target = state.target ?: return
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(state.replyTo?.id) { if (state.replyTo != null) listState.animateScrollToItem(0) }
     var guide by remember { mutableStateOf(false) }
     var policy by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let(controller::upload) }
@@ -47,22 +49,26 @@ fun DiscussionDialog(state: DiscussionState, controller: DiscussionController, s
                 Text(target.title, style = MaterialTheme.typography.labelSmall, maxLines = 2)
             } }, navigationIcon = { IconButton(onClick = controller::close) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } }) }) { padding ->
             PullToRefreshBox(isRefreshing = state.loading, onRefresh = controller::refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
-                LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxSize()) {
+                LazyColumn(state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxSize()) {
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if(signedIn) {
+                                state.replyTo?.let { reply -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Replying to ${reply.author}", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                                    TextButton(onClick = { controller.reply(null) }, enabled = !state.posting) { Text("Cancel reply") }
+                                } }
                                 OutlinedTextField(value = state.draft, onValueChange = controller::draft, modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Write a comment") }, minLines = 3,
-                                    enabled = !state.posting, supportingText = { Text("${state.draft.length} / 5,000") },
+                                    label = { Text(if (state.replyTo == null) "Write a comment" else "Write a reply") }, minLines = 3,
+                                    enabled = !state.posting && state.voting == null, supportingText = { Text("${state.draft.length} / 5,000") },
                                     isError = state.draft.length > COMMENT_LIMIT)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = { picker.launch("image/*") }, enabled = !state.uploading && !state.posting) {
+                                    IconButton(onClick = { picker.launch("image/*") }, enabled = !state.uploading && !state.posting && state.voting == null) {
                                         Icon(Icons.Rounded.AddPhotoAlternate, "Upload image")
                                     }
                                     if(state.uploading) { CircularProgressIndicator(Modifier.size(20.dp)); Text(" Uploading image…", style = MaterialTheme.typography.bodySmall) }
                                     Spacer(Modifier.weight(1f))
-                                    Button(onClick = controller::post, enabled = !state.posting && !state.uploading && commentValidation(state.draft) == null) {
-                                        Text(if(state.posting) "Posting…" else "Post")
+                                    Button(onClick = controller::post, enabled = !state.posting && !state.uploading && state.voting == null && commentValidation(state.draft) == null) {
+                                        Text(if(state.posting) "Posting…" else if (state.replyTo != null) "Reply" else "Post")
                                     }
                                 }
                                 if(state.draft.isNotBlank()) {
@@ -81,8 +87,7 @@ fun DiscussionDialog(state: DiscussionState, controller: DiscussionController, s
                     if(!state.loading && state.comments.isEmpty()) item { Text("No comments yet. Start the conversation.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     items(state.comments, key = { it.id }) { comment ->
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DiscussionCommentView(comment)
-                            comment.replies.forEach { reply -> Column(Modifier.padding(start = 20.dp)) { DiscussionCommentView(reply) } }
+                            DiscussionCommentView(comment, signedIn && state.voting == null && !state.posting && !state.uploading, controller, state.voting)
                             HorizontalDivider(Modifier.padding(top = 12.dp))
                         }
                     }
@@ -93,11 +98,67 @@ fun DiscussionDialog(state: DiscussionState, controller: DiscussionController, s
 }
 
 @Composable
-private fun DiscussionCommentView(comment: DiscussionComment) {
+private fun DiscussionCommentView(comment: DiscussionComment, enabled: Boolean, controller: DiscussionController, busyId: String?) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(comment.author, style = MaterialTheme.typography.titleSmall)
         CommentBody(comment.body)
+        if (!comment.deleted) CommentActions(comment.likes, comment.dislikes, comment.vote, comment.reactions, enabled,
+            onVote = { controller.vote(comment, it) }, onReact = { controller.react(comment, it) },
+            onReply = { controller.reply(comment) }, onDelete = if (comment.isOwn) ({ controller.delete(comment) }) else null)
+        if (busyId == comment.id) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
         Text(formatAppDate(comment.createdAt, LocalAppearance.current), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        comment.replies.forEach { reply ->
+            Row {
+                VerticalDivider(Modifier.height(32.dp).padding(end = 12.dp))
+                Column(Modifier.weight(1f)) { DiscussionCommentView(reply, enabled, controller, busyId) }
+            }
+        }
+    }
+}
+@Composable
+fun CommentVotes(likes: Int, dislikes: Int, selectedVote: Int, enabled: Boolean, countsAvailable: Boolean = true, onVote: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = selectedVote == 1, onClick = { onVote("like") }, enabled = enabled,
+            label = { Text(if (countsAvailable) likes.toString() else "?") },
+            leadingIcon = { Icon(Icons.Rounded.ThumbUp, if (selectedVote == 1) "Remove like" else "Like comment", Modifier.size(18.dp)) })
+        FilterChip(selected = selectedVote == -1, onClick = { onVote("dislike") }, enabled = enabled,
+            label = { Text(if (countsAvailable) dislikes.toString() else "?") },
+            leadingIcon = { Icon(Icons.Rounded.ThumbDown, if (selectedVote == -1) "Remove dislike" else "Dislike comment", Modifier.size(18.dp)) })
+    }
+}
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun CommentActions(likes: Int, dislikes: Int, selectedVote: Int, reactions: List<CommentReaction>, enabled: Boolean,
+    countsAvailable: Boolean = true, onVote: (String) -> Unit, onReact: (String) -> Unit,
+    onReply: () -> Unit, onDelete: (() -> Unit)? = null) {
+    var choosingReaction by remember { mutableStateOf(false) }
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) AlertDialog(onDismissRequest = { confirmingDelete = false },
+        title = { Text("Delete comment?") }, text = { Text("This permanently removes your comment.") },
+        confirmButton = { TextButton(onClick = { confirmingDelete = false; onDelete?.invoke() }, enabled = enabled) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } })
+    if (choosingReaction) AlertDialog(onDismissRequest = { choosingReaction = false }, title = { Text("React to comment") },
+        text = { FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf("😀", "😃", "😄", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘", "😎", "🤔", "😮", "😅",
+                "😭", "😢", "😡", "🤯", "😱", "😴", "🤡", "💀", "👀", "🙌", "👏", "🙏", "👍", "👎",
+                "❤️", "💔", "🔥", "✨", "🎉", "💯", "✅", "❌", "❓", "❗").forEach { emoji ->
+                TextButton(onClick = { choosingReaction = false; onReact(emoji) }, enabled = enabled,
+                    contentPadding = PaddingValues(4.dp), modifier = Modifier.width(48.dp)) { Text(emoji, style = MaterialTheme.typography.titleLarge) }
+            }
+        } }, confirmButton = { TextButton(onClick = { choosingReaction = false }) { Text("Cancel") } })
+    Column {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.Center) {
+            CommentVotes(likes, dislikes, selectedVote, enabled, countsAvailable, onVote)
+            IconButton(onClick = { choosingReaction = true }, enabled = enabled) { Icon(Icons.Rounded.AddReaction, "React to comment") }
+            TextButton(onClick = onReply, enabled = enabled) { Text("Reply") }
+            if (onDelete != null) TextButton(onClick = { confirmingDelete = true }, enabled = enabled) { Text("Delete") }
+        }
+        if (reactions.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            reactions.forEach { reaction ->
+                FilterChip(selected = reaction.reacted, onClick = { onReact(reaction.emoji) }, enabled = enabled,
+                    label = { Text("${reaction.emoji} ${reaction.count}") })
+            }
+        }
     }
 }
 @Composable

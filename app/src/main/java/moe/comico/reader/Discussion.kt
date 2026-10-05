@@ -10,17 +10,25 @@ import java.io.IOException
 
 data class DiscussionTarget(val id: String, val title: String, val chapter: Boolean = false) {
     fun query() = mapOf((if(chapter) "chapterId" else "mangaId") to id)
-    fun payload(body: String) = JSONObject(query()).put("body", body.trim())
+    fun payload(body: String, parentId: String? = null) = JSONObject(query()).put("body", body.trim()).apply { parentId?.let { put("parentId", it) } }
 }
-data class DiscussionComment(val id: String, val body: String, val author: String, val createdAt: String, val replies: List<DiscussionComment> = emptyList())
-fun JSONObject.discussionComment(): DiscussionComment {
+data class DiscussionComment(val id: String, val body: String, val author: String, val createdAt: String, val replies: List<DiscussionComment> = emptyList(),
+    val likes: Int = 0, val dislikes: Int = 0, val vote: Int = 0, val deleted: Boolean = false,
+    val reactions: List<CommentReaction> = emptyList(), val isOwn: Boolean = false, val parentId: String? = null)
+data class CommentReaction(val emoji: String, val count: Int, val reacted: Boolean)
+fun JSONObject.discussionComment(parentId: String? = null): DiscussionComment {
     val author = optJSONObject("author")
     return DiscussionComment(getString("id"), if(optBoolean("deleted")) "Comment deleted" else optString("body"),
         author?.optString("name")?.takeIf { it.isNotBlank() } ?: author?.optString("username").orEmpty(),
-        optString("createdAt"), optJSONArray("replies").objects().map { it.discussionComment() })
+        optString("createdAt"), optJSONArray("replies").objects().map { it.discussionComment(parentId ?: getString("id")) },
+        optJSONObject("votes")?.optInt("likes")?.coerceAtLeast(0) ?: 0,
+        optJSONObject("votes")?.optInt("dislikes")?.coerceAtLeast(0) ?: 0,
+        optJSONObject("votes")?.optInt("mine")?.coerceIn(-1, 1) ?: 0, optBoolean("deleted"),
+        optJSONArray("reactions").objects().map { CommentReaction(it.getString("emoji"), it.optInt("count").coerceAtLeast(0), it.optBoolean("reacted")) },
+        optBoolean("isOwn"), parentId)
 }
 data class DiscussionState(val target: DiscussionTarget? = null, val comments: List<DiscussionComment> = emptyList(),
-    val draft: String = "", val loading: Boolean = false, val posting: Boolean = false, val uploading: Boolean = false, val error: String? = null)
+    val replyTo: DiscussionComment? = null, val voting: String? = null, val draft: String = "", val loading: Boolean = false, val posting: Boolean = false, val uploading: Boolean = false, val error: String? = null)
 const val COMMENT_LIMIT = 5000
 const val COMMENT_IMAGE_LIMIT = 10 * 1024 * 1024
 fun commentImageUrl(value: String): String? {
@@ -41,9 +49,9 @@ class DiscussionController(private val api: ComicoApi, private val scope: Corout
     val chapterCommentCounts = counts.asStateFlow()
     private var loadJob: Job? = null
     private var actionJob: Job? = null
-    fun open(target: DiscussionTarget) {
+    fun open(target: DiscussionTarget, replyTo: DiscussionComment? = null) {
         loadJob?.cancel(); actionJob?.cancel()
-        mutable.value = DiscussionState(target = target)
+        mutable.value = DiscussionState(target = target, replyTo = replyTo)
         refresh()
     }
     fun close() {
@@ -52,6 +60,7 @@ class DiscussionController(private val api: ComicoApi, private val scope: Corout
     }
     fun draft(value: String) { mutable.update { it.copy(draft = value, error = null) } }
     fun refresh() {
+        if (mutable.value.voting != null || mutable.value.posting || mutable.value.uploading) return
         val target = mutable.value.target ?: return
         loadJob?.cancel()
         loadJob = scope.launch {
@@ -64,23 +73,49 @@ class DiscussionController(private val api: ComicoApi, private val scope: Corout
             catch(e: Exception) { mutable.update { it.copy(loading = false, error = e.message ?: "Could not load comments.") } }
         }
     }
+    fun reply(comment: DiscussionComment?) {
+        if (mutable.value.voting != null || mutable.value.posting) return
+        mutable.update { it.copy(replyTo = comment, draft = "", error = null) }
+    }
     fun post() {
         val before = mutable.value
         val target = before.target ?: return
-        if(before.posting || before.uploading) return
+        if(before.posting || before.uploading || before.voting != null) return
         commentValidation(before.draft)?.let { error -> mutable.update { it.copy(error = error) }; return }
         actionJob = scope.launch {
             mutable.update { it.copy(posting = true, error = null) }
             try {
-                api.postDiscussion(target, before.draft)
-                mutable.update { it.copy(posting = false, draft = "") }
+                api.postDiscussion(target, before.draft, before.replyTo?.let { it.parentId ?: it.id })
+                mutable.update { it.copy(posting = false, draft = "", replyTo = null) }
                 refresh()
             } catch(e: CancellationException) { throw e }
             catch(e: Exception) { mutable.update { it.copy(posting = false, error = e.message ?: "Could not post comment.") } }
         }
     }
+    fun vote(comment: DiscussionComment, value: String) = act(comment) { api.voteDiscussion(comment.id, value) }
+    fun react(comment: DiscussionComment, emoji: String) = act(comment) { api.reactDiscussion(comment.id, emoji) }
+    fun delete(comment: DiscussionComment) {
+        if (comment.isOwn) act(comment) { api.deleteDiscussion(comment.id) }
+    }
+    private fun act(comment: DiscussionComment, action: suspend () -> Unit) {
+        val before = mutable.value
+        val target = before.target ?: return
+        if (before.voting != null || before.posting || before.uploading || comment.deleted) return
+        loadJob?.cancel()
+        actionJob = scope.launch {
+            mutable.update { it.copy(voting = comment.id, loading = false, error = null) }
+            try {
+                action()
+                val comments = api.discussion(target)
+                mutable.update { if (it.target == target) it.copy(comments = comments, voting = null) else it }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                mutable.update { it.copy(voting = null, error = e.message ?: "Couldn't update this vote.") }
+            }
+        }
+    }
     fun upload(uri: Uri) {
-        if(mutable.value.uploading || mutable.value.posting || mutable.value.target == null) return
+        if(mutable.value.uploading || mutable.value.posting || mutable.value.voting != null || mutable.value.target == null) return
         actionJob = scope.launch {
             mutable.update { it.copy(uploading = true, error = null) }
             try {

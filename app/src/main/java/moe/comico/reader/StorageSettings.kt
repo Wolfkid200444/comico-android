@@ -73,7 +73,7 @@ fun StorageSettingsScreen(state: AppState, model: ReaderViewModel) {
             Text("Applies to new downloads. Existing chapters stay in their current location.",
                 Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             DownloadFolderButton(state, model)
-            if (state.downloadFolder != null) TextButton(onClick = model::useDefaultDownloadFolder, enabled = !state.downloadBusy && !busy) {
+            if (state.downloadFolder != null) TextButton(onClick = model::useDefaultDownloadFolder, enabled = !state.downloadBusy && !busy && state.downloadQueue.none { it.active }) {
                 Text("Use app storage")
             }
             if (state.downloadFolder == null) Text("Chapters in app storage are removed if you uninstall the app.",
@@ -97,15 +97,15 @@ fun StorageSettingsScreen(state: AppState, model: ReaderViewModel) {
         item { HorizontalDivider() }
         item {
             Text("Cache", style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { clear = "Chapter cache" }, enabled = !busy && !state.downloadBusy) {
+            TextButton(onClick = { clear = "Chapter cache" }, enabled = !busy && !state.downloadBusy && state.downloadQueue.none { it.active }) {
                 Icon(Icons.Rounded.CleaningServices, null); Text("Clear chapter cache", Modifier.padding(start = 8.dp))
             }
-            TextButton(onClick = { clear = "Page preview cache" }, enabled = !busy && !state.downloadBusy) {
+            TextButton(onClick = { clear = "Page preview cache" }, enabled = !busy && !state.downloadBusy && state.downloadQueue.none { it.active }) {
                 Icon(Icons.Rounded.HideImage, null); Text("Clear page preview cache", Modifier.padding(start = 8.dp))
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            state.downloadMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            state.downloadMessage.takeIf { state.downloadMessageMangaId == null }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
         item {
             HorizontalDivider()

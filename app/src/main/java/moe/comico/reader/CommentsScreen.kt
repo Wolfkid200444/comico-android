@@ -18,7 +18,7 @@ import java.time.format.DateTimeFormatter
 fun CommentsScreen(state: AppState, model: ReaderViewModel) {
     PullToRefreshBox(
         isRefreshing = state.accountDataLoading,
-        onRefresh = { if (!state.accountDataLoading) model.loadAccountData() },
+        onRefresh = { if (!state.accountDataLoading && state.commentBusyId == null) model.loadAccountData() },
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
@@ -41,6 +41,14 @@ fun CommentsScreen(state: AppState, model: ReaderViewModel) {
                                 color = MaterialTheme.colorScheme.primary)
                         }
                         CommentBody(comment.body)
+                        if (!comment.deleted) CommentActions(comment.likes, comment.dislikes, comment.vote, comment.reactions,
+                            enabled = !state.offline && state.account.user != null && !state.accountDataLoading && state.commentBusyId == null,
+                            countsAvailable = comment.votesLoaded,
+                            onVote = { model.voteAccountComment(comment, it) }, onReact = { model.reactAccountComment(comment, it) },
+                            onReply = { model.replyAccountComment(comment) }, onDelete = { model.deleteAccountComment(comment) })
+                        if (state.commentBusyId == comment.id) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        state.commentErrors[comment.id]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        if (!comment.votesLoaded) Text("Counts unavailable. Pull down to retry.", style = MaterialTheme.typography.labelSmall)
                         Text(formatAppDate(comment.createdAt, LocalAppearance.current), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

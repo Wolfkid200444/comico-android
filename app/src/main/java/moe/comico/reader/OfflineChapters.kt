@@ -71,7 +71,7 @@ fun extractChapterArchive(input: InputStream, directory: File, checkActive: () -
 
 class OfflineChapterStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("offlineChapters", 0)
-    private val writes = Mutex()
+    companion object { private val writes = Mutex() }
     fun folder(owner: String?): String? = prefs.getString(accountStorageKey("folder", owner), null)
     fun chooseFolder(owner: String?, uri: Uri) {
         require(uri.authority == "com.android.externalstorage.documents") { "Choose a folder in internal storage or on an SD card so chapters remain available offline." }

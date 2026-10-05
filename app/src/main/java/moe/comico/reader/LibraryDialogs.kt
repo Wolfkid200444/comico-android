@@ -161,7 +161,7 @@ fun CollectionEditor(collection: LibraryCollection?, model: ReaderViewModel, clo
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it; error = null }, label = { Text("Name") }, singleLine = true,
-                    isError = error != null, supportingText = { Text(error ?: "${name.length}/60") })
+                    isError = error != null, supportingText = { Text(error ?: "${name.length}/120") })
                 if (collection == null) Text("Collections are saved on this device.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else TextButton(onClick = { deleting = true }) { Text("Delete collection", color = MaterialTheme.colorScheme.error) }

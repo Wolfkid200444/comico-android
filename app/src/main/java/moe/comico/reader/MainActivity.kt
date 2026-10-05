@@ -19,12 +19,26 @@ class MainActivity : ComponentActivity() {
         setContent {
             val model: ReaderViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
+            val notifications = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+            val notificationPrefs = remember { getSharedPreferences("notifications", 0) }
+            LaunchedEffect(state.downloadQueue.any { it.active }) {
+                if (android.os.Build.VERSION.SDK_INT >= 33 && state.downloadQueue.any { it.active } &&
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                    !notificationPrefs.getBoolean("asked", false)) {
+                    notificationPrefs.edit().putBoolean("asked", true).apply()
+                    notifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             CompositionLocalProvider(LocalAppearance provides state.appearance) {
                 ComicoTheme(state.theme, state.dynamicColor) {
                     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
                     DisposableEffect(lifecycleOwner, model, state.offline) {
                         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                            if(!state.offline && event == androidx.lifecycle.Lifecycle.Event.ON_START) model.updates.check()
+                            if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
+                                model.refreshConnectivity()
+                                if (!state.offline) model.updates.check()
+                            }
                         }
                         lifecycleOwner.lifecycle.addObserver(observer)
                         if(!state.offline && lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) model.updates.check()

@@ -38,7 +38,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
             .apply { if(url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/")) header("Origin",BASE_URL) }
             .apply { if(method != "GET") method(method,if(method == "DELETE") null else (body ?: JSONObject()).toString().toRequestBody("application/json".toMediaType())) }
             .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withResponse { response ->
             if (!response.isSuccessful && url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/auth/")) {
                 val error = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
                 throw IOException(accountErrorMessage(error?.optString("code").orEmpty(),error?.optString("message")?.takeIf { it.isNotBlank() } ?: "Account request failed with HTTP ${response.code}. Try again."))
@@ -65,8 +65,9 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         val request = Request.Builder().url("$baseUrl/api/downloads/chapter")
             .header("Origin", BASE_URL).header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
             .post(JSONObject().put("chapterId", id).toString().toRequestBody("application/json".toMediaType())).build()
+        val downloadContext = coroutineContext
         try {
-            client.newBuilder().callTimeout(3, TimeUnit.MINUTES).build().newCall(request).execute().use { response ->
+            client.newBuilder().callTimeout(3, TimeUnit.MINUTES).build().newCall(request).withResponse { response ->
                 if (!response.isSuccessful) {
                     val error = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
                     if (error?.optJSONObject("data")?.optString("kind") == "already-downloaded")
@@ -75,7 +76,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
                         ?: if (response.code == 401) "Sign in to download chapters." else "Download failed (HTTP ${response.code}).")
                 }
                 val body = response.body ?: throw IOException("The server returned an empty download.")
-                destination.outputStream().use { output -> body.byteStream().use { copyChapterBytes(it, output) } }
+                destination.outputStream().use { output -> body.byteStream().use { copyChapterBytes(it, output) { downloadContext.ensureActive(); check(networkAvailable()) { "Offline. Download paused." } } } }
             }
         } catch (e: Exception) { destination.delete(); throw e }
     }
@@ -90,7 +91,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
                     check(networkAvailable()) { "Offline. Chapter saving paused." }
                     val request = Request.Builder().url(url).header("Referer", "$BASE_URL/")
                         .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME}").build()
-                    client.newCall(request).execute().use { response ->
+                    client.newCall(request).withResponse { response ->
                         check(response.isSuccessful) { "Couldn't cache page ${index + 1}." }
                         val body = response.body ?: error("Empty chapter image.")
                         val extension = when (body.contentType()?.subtype?.lowercase()) {
@@ -122,10 +123,38 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString(), body))
     }
-    suspend fun discussion(target: DiscussionTarget): List<DiscussionComment> =
-        get("/api/comments", target.query() + ("sort" to "newest")).optJSONArray("items").objects().map { it.discussionComment() }
-    suspend fun postDiscussion(target: DiscussionTarget, body: String) {
-        requestText("$baseUrl/api/comments", target.payload(body))
+    suspend fun discussion(target: DiscussionTarget): List<DiscussionComment> {
+        val comments = linkedMapOf<String, DiscussionComment>()
+        var offset = 0
+        while (true) {
+            val data = get("/api/comments", target.query() + mapOf("sort" to "newest", "limit" to "100", "offset" to offset.toString()))
+            val batch = data.optJSONArray("items").objects().map { it.discussionComment() }
+            val size = comments.size
+            batch.forEach { comments[it.id] = it }
+            if (batch.isNotEmpty() && comments.size == size) throw IOException("Comment pages stopped advancing. Try again.")
+            offset += batch.size
+            if (batch.size < 100 || offset >= data.optInt("total", Int.MAX_VALUE)) break
+        }
+        return comments.values.toList()
+    }
+    suspend fun voteDiscussion(id: String, vote: String) {
+        require(vote in setOf("like", "dislike")) { "Invalid comment vote." }
+        val url = baseUrl.toHttpUrl().newBuilder().addPathSegments("api/comments")
+            .addPathSegment(id).addPathSegment("vote").build()
+        requestText(url.toString(), JSONObject().put("vote", vote), "PUT")
+    }
+    suspend fun reactDiscussion(id: String, emoji: String) {
+        require(emoji.isNotBlank() && emoji.length <= 64) { "Choose a reaction." }
+        val url = baseUrl.toHttpUrl().newBuilder().addPathSegments("api/comments").addPathSegment(id).addPathSegment("reaction").build()
+        requestText(url.toString(), JSONObject().put("emoji", emoji), "PUT")
+    }
+    suspend fun deleteDiscussion(id: String) {
+        val url = baseUrl.toHttpUrl().newBuilder().addPathSegments("api/comments").addPathSegment(id).build()
+        requestText(url.toString(), method = "DELETE")
+    }
+    suspend fun postDiscussion(target: DiscussionTarget, body: String, parentId: String? = null) {
+        commentValidation(body)?.let { throw IllegalArgumentException(it) }
+        requestText("$baseUrl/api/comments", target.payload(body, parentId))
     }
     suspend fun uploadCommentImage(bytes: ByteArray, type: String): String = withContext(Dispatchers.IO) {
         val body = okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM)
@@ -133,7 +162,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
                 bytes.toRequestBody(type.toMediaType())).build()
         val request = Request.Builder().url("$baseUrl/api/comments/images").header("Origin", BASE_URL)
             .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME}").post(body).build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withResponse { response ->
             val data = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
             if(!response.isSuccessful) throw IOException(data?.optString("statusMessage")?.takeIf { it.isNotBlank() }
                 ?: "Image upload failed (HTTP ${response.code}).")
@@ -236,7 +265,21 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
     }
     suspend fun comments(username: String): List<AccountComment> {
         val url = "$baseUrl/api/users".toHttpUrl().newBuilder().addPathSegment(username).addPathSegment("comments").addQueryParameter("limit","50").build()
-        return JSONArray(requestText(url.toString())).objects().map { it.accountComment() }
+        val comments = JSONArray(requestText(url.toString())).objects().map { it.accountComment() }
+        val discussions = comments.mapNotNull { it.discussionTarget() }.distinctBy { it.query() }.associate { target ->
+            target.query() to
+            try { discussion(target) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { emptyList() }
+        }
+        return comments.map { comment ->
+            discussions[comment.discussionTarget()?.query()]?.findComment(comment.id)?.let { comment.withDiscussion(it) } ?: comment
+        }
+    }
+    suspend fun refreshAccountComment(comment: AccountComment): AccountComment {
+        val target = comment.discussionTarget() ?: throw IOException("This comment has no discussion link.")
+        val detail = discussion(target).findComment(comment.id) ?: throw IOException("This comment is no longer available.")
+        return comment.withDiscussion(detail)
     }
     suspend fun firstChapter(id: String, language: String, source: String?): Chapter? {
         val data = get("/api/manga/$id/chapters",mapOf("language" to language,"limit" to "1","offset" to "0","order" to "asc","sort" to "number") + (source?.let { mapOf("source" to it) } ?: emptyMap()))
