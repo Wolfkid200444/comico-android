@@ -1,0 +1,19 @@
+README.md
+  s_8eb1b94dce751f::t_33f3253960edcc 3,5-18,22-53,55,59,63,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7ff8208d83662e1eb1ab639f565018278bf4a2b3",
+  "prompts": {},
+  "sessions": {
+    "s_8eb1b94dce751f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a109b7-ec9d-78b2-9605-740113a60af2",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
