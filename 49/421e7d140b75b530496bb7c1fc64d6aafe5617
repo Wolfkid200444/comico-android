@@ -1,0 +1,71 @@
+app/src/main/AndroidManifest.xml
+  s_6c0bd151f1b39b::t_90cea5cf1720eb 4-6,9
+app/src/main/java/moe/comico/reader/ChapterDownloadService.kt
+  s_6c0bd151f1b39b::t_0e0b1ee5fad3e3 1-81
+app/src/main/java/moe/comico/reader/ChapterDownloads.kt
+  s_6c0bd151f1b39b::t_59eefbbc143d30 1-169
+app/src/main/java/moe/comico/reader/CommentsScreen.kt
+  s_6c0bd151f1b39b::t_5b2b0ca5e7bca1 21,44-51
+app/src/main/java/moe/comico/reader/DownloadControls.kt
+  s_6c0bd151f1b39b::t_71a14c36ea9142 13,16,22,66-70,76-88,90-122,127,146
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  s_6c0bd151f1b39b::t_46c80efb699187 22-32,38-41
+app/src/main/java/moe/comico/reader/NetworkCalls.kt
+  s_6c0bd151f1b39b::t_3438821ebe4e5f 1-36
+app/src/main/java/moe/comico/reader/OfflineChapters.kt
+  s_6c0bd151f1b39b::t_44c496fd2b1505 74
+app/src/main/java/moe/comico/reader/StorageSettings.kt
+  s_6c0bd151f1b39b::t_a9ba40806fa5b5 76,100,103,108
+app/src/test/java/moe/comico/reader/DownloadCancellationTest.kt
+  s_6c0bd151f1b39b::t_c23baece5e07db 1-26
+app/src/test/java/moe/comico/reader/DownloadQueueTest.kt
+  s_6c0bd151f1b39b::t_e5cf8846cbd20f 1-33
+app/src/main/java/moe/comico/reader/Connectivity.kt
+  s_2486486efcf3c1::t_9399517b42ec71 1-22
+app/src/main/java/moe/comico/reader/LibraryCollection.kt
+  s_95f77e28bdee2f::t_e4e2ca6a6f2669 22
+app/src/main/java/moe/comico/reader/LibraryDialogs.kt
+  s_95f77e28bdee2f::t_8ce8e60ddc8d06 164
+app/src/test/java/moe/comico/reader/CollectionContractProbeTest.kt
+  s_0976e259204c45::t_6526c88b9dde14 16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49421e7d140b75b530496bb7c1fc64d6aafe5617",
+  "prompts": {},
+  "sessions": {
+    "s_0976e259204c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0feea-f311-7631-b450-82e71f2f3495",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_2486486efcf3c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10d99-c1ca-71f2-b7fe-0668b4be6df4",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_6c0bd151f1b39b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a109a1-cc21-7cd3-b9eb-bcb52a412e7b",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    },
+    "s_95f77e28bdee2f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10dd2-d986-77b0-b780-de25e9f1bbae",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
