@@ -7,6 +7,7 @@ fun settingsTooltip(section: String) = when(section) {
     "Reading" -> "Choose default reader controls, layout, and sources."
     "Appearance" -> "Choose colors, date formats, and navigation labels."
     "Downloads" -> "Read or remove chapters downloaded for offline reading."
+    "Notifications" -> "Choose whether to receive new chapter alerts for your account library."
     "Data and storage" -> "Manage library and history data, choose the download location, check storage usage, and clear caches."
     "Leaderboard" -> "See accounts ranked by reading experience."
     "Help" -> "Find reading tips and report problems."

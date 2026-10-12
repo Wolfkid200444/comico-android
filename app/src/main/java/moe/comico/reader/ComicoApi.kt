@@ -123,6 +123,10 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString(), body))
     }
+    suspend fun chapterNotifications(): List<ChapterAlert> =
+        get("/api/notifications", mapOf("tab" to "comics", "limit" to "100"))
+            .getJSONArray("items").objects().mapNotNull { it.chapterAlert() }
+
     suspend fun discussion(target: DiscussionTarget): List<DiscussionComment> {
         val comments = linkedMapOf<String, DiscussionComment>()
         var offset = 0

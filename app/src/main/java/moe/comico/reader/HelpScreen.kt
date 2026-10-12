@@ -6,7 +6,8 @@ import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -16,6 +17,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun HelpContent(offline: Boolean, onSelect: (String) -> Unit) {
     val uriHandler = LocalUriHandler.current
+    var debugTaps by remember { mutableIntStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(
             Modifier.fillMaxWidth().padding(vertical = 16.dp),
@@ -23,7 +25,11 @@ fun HelpContent(offline: Boolean, onSelect: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(Icons.AutoMirrored.Rounded.HelpOutline, null, Modifier.size(44.dp), tint = MaterialTheme.colorScheme.primary)
-            Text("Make yourself at home", style = MaterialTheme.typography.headlineSmall)
+            Text("Make yourself at home", style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.clickable {
+                    debugTaps++
+                    if (debugTaps >= 7) { debugTaps = 0; onSelect("Debug") }
+                })
             Text("A quick guide to reading with Comico.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         HelpCard(Icons.AutoMirrored.Rounded.MenuBook, "Reading",

@@ -76,13 +76,15 @@ fun LeaderboardScreen(state: AppState, model: ReaderViewModel) {
 @Composable
 fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, onSelect: (String) -> Unit) {
     val signedIn = state.account.user != null
-    val sections = listOf("Account", "Profile", "Comments", "Reading", "Appearance", "Downloads", "Data and storage", "Leaderboard", "Help", "About")
+    val sections = listOf("Account", "Profile", "Comments", "Reading", "Appearance", "Downloads", "Notifications", "Data and storage", "Leaderboard", "Help", "About")
     LaunchedEffect(signedIn, state.offline, selected) {
         if ((state.offline && selected in listOf("Account", "Profile", "Comments", "Leaderboard")) ||
             (!signedIn && selected in listOf("Profile", "Comments"))) onSelect("Menu")
     }
     if (selected == "About") { AboutScreen(state, model.updates); return }
     if (selected == "Downloads") { DownloadsScreen(state, model); return }
+    if (selected == "Notifications") { NotificationSettings(state); return }
+    if (selected == "Debug") { DebugScreen(state, model, onSelect); return }
     if (selected == "Data and storage") { StorageSettingsScreen(state, model); return }
     if (selected == "Comments" && signedIn) {
         CommentsScreen(state, model)
@@ -109,6 +111,7 @@ fun SettingsScreen(state: AppState, model: ReaderViewModel, selected: String, on
                         "Appearance" -> Icons.Rounded.Palette
                         "Data and storage" -> Icons.Rounded.Storage
                         "Downloads" -> Icons.Rounded.Download
+                        "Notifications" -> Icons.Rounded.Notifications
                         "Leaderboard" -> Icons.Rounded.Leaderboard
                         "Help" -> Icons.Rounded.HelpOutline
                         else -> Icons.Rounded.Info

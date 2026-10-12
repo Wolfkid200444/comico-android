@@ -703,6 +703,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         downloads.cancelOtherOwners(user?.id)
         imageCacheJob?.cancel()
         prefs.edit().apply { if (user == null) remove("localLibraryOwner") else putString("localLibraryOwner", user.id) }.apply()
+        ChapterAlerts.sync(getApplication())
         progressSyncJob?.cancel();accountDataJob?.cancel();commentActionJob?.cancel()
         discussion.close()
         mutable.update { it.copy(commentBusyId = null, commentErrors = emptyMap()) }

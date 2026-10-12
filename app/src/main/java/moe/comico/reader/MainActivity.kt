@@ -13,17 +13,37 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
+    private var chapterAlertRequest by mutableIntStateOf(0)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == ChapterAlerts.ACTION) chapterAlertRequest++
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (intent.action == ChapterAlerts.ACTION) chapterAlertRequest++
         setContent {
             val model: ReaderViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             val notifications = androidx.activity.compose.rememberLauncherForActivityResult(
-                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ChapterAlerts.sync(this@MainActivity) }
             val notificationPrefs = remember { getSharedPreferences("notifications", 0) }
-            LaunchedEffect(state.downloadQueue.any { it.active }) {
-                if (android.os.Build.VERSION.SDK_INT >= 33 && state.downloadQueue.any { it.active } &&
+            LaunchedEffect(chapterAlertRequest, state.account.user?.id) {
+                if (chapterAlertRequest > 0 && intent.action == ChapterAlerts.ACTION &&
+                    state.account.user?.id == intent.getStringExtra("owner")) {
+                    if (state.reader != null) model.back()
+                    if (state.selected != null) model.back()
+                    if (state.offline) model.tab("Library") else model.openFeed(DiscoverFeed.UPDATES)
+                    setIntent(android.content.Intent(this@MainActivity, MainActivity::class.java))
+                }
+            }
+            LaunchedEffect(state.downloadQueue.any { it.active }, state.account.user?.id) {
+                ChapterAlerts.sync(this@MainActivity)
+                val needsNotifications = state.downloadQueue.any { it.active } ||
+                    (state.account.user != null && ChapterAlerts.enabled(this@MainActivity))
+                if (android.os.Build.VERSION.SDK_INT >= 33 && needsNotifications &&
                     checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
                     !notificationPrefs.getBoolean("asked", false)) {
                     notificationPrefs.edit().putBoolean("asked", true).apply()
@@ -37,6 +57,7 @@ class MainActivity : ComponentActivity() {
                         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                             if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
                                 model.refreshConnectivity()
+                                ChapterAlerts.sync(this@MainActivity)
                                 if (!state.offline) model.updates.check()
                             }
                         }
