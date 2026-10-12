@@ -1,0 +1,47 @@
+app/src/main/java/moe/comico/reader/HelpScreen.kt
+  h_0d2b7dea709e7c 9-10,20,28-32
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  h_0d2b7dea709e7c 126-129
+app/src/main/java/moe/comico/reader/DebugScreen.kt
+  h_0d2b7dea709e7c 1-116
+app/src/main/AndroidManifest.xml
+  h_0d2b7dea709e7c 7,10
+app/src/main/java/moe/comico/reader/NotificationSettings.kt
+  h_0d2b7dea709e7c 1-90
+app/src/main/java/moe/comico/reader/ChapterAlertService.kt
+  h_0d2b7dea709e7c 1-49
+app/src/main/java/moe/comico/reader/SettingsTooltip.kt
+  h_0d2b7dea709e7c 10
+app/src/main/java/moe/comico/reader/MainActivity.kt
+  h_0d2b7dea709e7c 16-22,26,31,33-46,60
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  h_0d2b7dea709e7c 706
+app/src/test/java/moe/comico/reader/ChapterAlertsTest.kt
+  h_0d2b7dea709e7c 1-58
+app/src/main/java/moe/comico/reader/ChapterAlerts.kt
+  h_0d2b7dea709e7c 1-88,90-112
+  s_fc1360e105a56a::t_a65cac974291d4 89
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  h_0d2b7dea709e7c 79,86-87,114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "812e1169b163e2c53e1378294d96c9942c6c09dd",
+  "prompts": {},
+  "humans": {
+    "h_0d2b7dea709e7c": {
+      "author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_fc1360e105a56a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a130aa-5daa-7be1-aa91-4d120acd58b8",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
