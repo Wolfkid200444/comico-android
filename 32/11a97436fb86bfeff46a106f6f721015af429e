@@ -1,0 +1,70 @@
+app/src/test/java/moe/comico/reader/ReadingActivityTest.kt
+  h_0d2b7dea709e7c 1-52
+app/src/main/java/moe/comico/reader/AccountScreens.kt
+  h_0d2b7dea709e7c 150
+app/src/test/java/moe/comico/reader/ReaderBookTest.kt
+  h_0d2b7dea709e7c 1-42
+app/src/main/java/moe/comico/reader/ComicoApi.kt
+  h_0d2b7dea709e7c 39,126-175
+app/src/main/java/moe/comico/reader/ReadingActivity.kt
+  h_0d2b7dea709e7c 1-77
+app/build.gradle.kts
+  h_0d2b7dea709e7c 31
+app/src/main/java/moe/comico/reader/CollectionChanges.kt
+  h_0d2b7dea709e7c 1-52
+app/src/main/java/moe/comico/reader/ReadingSessionTracker.kt
+  h_0d2b7dea709e7c 1-44
+app/src/main/java/moe/comico/reader/ProfileScreen.kt
+  h_0d2b7dea709e7c 122
+app/src/test/java/moe/comico/reader/CollectionChangesTest.kt
+  h_0d2b7dea709e7c 1-44
+app/src/main/java/moe/comico/reader/LibraryCollection.kt
+  h_0d2b7dea709e7c 6-7,11
+app/src/test/java/moe/comico/reader/CollectionApiTest.kt
+  h_0d2b7dea709e7c 1-59
+app/src/main/java/moe/comico/reader/CollectionManager.kt
+  h_0d2b7dea709e7c 24
+version.properties
+  h_0d2b7dea709e7c 1-2
+app/src/main/java/moe/comico/reader/ReaderBook.kt
+  h_0d2b7dea709e7c 1-21
+release-notes/v0.10.0.md
+  h_0d2b7dea709e7c 1-13
+app/src/main/java/moe/comico/reader/ComicoApp.kt
+  h_0d2b7dea709e7c 154
+app/src/main/java/moe/comico/reader/Statistics.kt
+  h_0d2b7dea709e7c 23,44-48,52,56,87
+app/src/main/java/moe/comico/reader/ReaderSettings.kt
+  h_0d2b7dea709e7c 38-40,54-57
+app/src/main/java/moe/comico/reader/ReaderScreen.kt
+  h_0d2b7dea709e7c 5-13,60,62-72,87,92-98,103-106,136-139,176-184,186-187,189-190
+  s_96f995086f624a::t_c376a4ff6d4379 185,188,191-194
+app/src/main/java/moe/comico/reader/ReaderViewModel.kt
+  h_0d2b7dea709e7c 22,386-403,406-509,735-742,830-831,837,846,935-937,962,1058,1065,1068
+  h_0d2b7dea709e7c 510
+app/src/main/java/moe/comico/reader/ReaderPreferences.kt
+  h_0d2b7dea709e7c 17-18,33-34,41-42,50-53
+app/src/main/java/moe/comico/reader/InsightsScreen.kt
+  h_0d2b7dea709e7c 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3211a97436fb86bfeff46a106f6f721015af429e",
+  "prompts": {},
+  "humans": {
+    "h_0d2b7dea709e7c": {
+      "author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_96f995086f624a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a137d4-f016-78c0-a810-cd708df8ea1c",
+        "model": "unknown"
+      },
+      "human_author": "Wolfkid200444 <32025746+Wolfkid200444@users.noreply.github.com>"
+    }
+  }
+}
