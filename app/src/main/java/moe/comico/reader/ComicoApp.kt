@@ -151,9 +151,7 @@ fun ComicoApp(state: AppState, model: ReaderViewModel) {
                         when(state.tab) {
                             "Settings", "Comments", "Edit profile" -> SettingsScreen(state,model,settingsSection) { settingsSection = it }
                             "Profile" -> ProfileScreen(state,model)
-                            "Statistics" -> androidx.compose.foundation.lazy.LazyColumn(
-                                Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp)
-                            ) { item { ProfileStatistics(state) } }
+                            "Statistics" -> StatisticsScreen(state)
                             "History" -> HistoryScreen(state,model)
                             "Leaderboard" -> LeaderboardScreen(state,model)
                             "Discover" -> if (state.offline) LibraryScreen(state,model) else DiscoverScreen(state,model)

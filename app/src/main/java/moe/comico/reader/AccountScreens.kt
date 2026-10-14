@@ -147,7 +147,7 @@ fun DataPanel(state: AppState, model: ReaderViewModel) {
             }
         }
     }
-    if(clear) AlertDialog(onDismissRequest = { clear = false },title = { Text("Clear reading history?") },text = { Text(if (state.account.user != null) "This clears history on this device and your comico.moe account. Saved titles remain in your library." else "This clears reading history on this device. Saved titles remain in your library.") },confirmButton = { TextButton(onClick = { clear = false;model.clearHistory() }) { Text("Clear history") } },dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancel") } })
+    if(clear) AlertDialog(onDismissRequest = { clear = false },title = { Text("Clear reading history?") },text = { Text(if (state.account.user != null) "This clears history on this device and your comico.moe account. Local reading insights are also cleared. Saved titles remain in your library." else "This clears reading history on this device. Local reading insights are also cleared. Saved titles remain in your library.") },confirmButton = { TextButton(onClick = { clear = false;model.clearHistory() }) { Text("Clear history") } },dismissButton = { TextButton(onClick = { clear = false }) { Text("Cancel") } })
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Account data",style = MaterialTheme.typography.titleLarge)
         SyncStatus(state,model)

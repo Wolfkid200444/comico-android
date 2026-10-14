@@ -20,7 +20,7 @@ fun ProfileStatistics(state: AppState) {
         .entries.sortedByDescending { it.value }
     val metrics = listOf(
         "Titles in library" to library.size,
-        "Chapters read" to state.publicProfile?.chaptersRead,
+        "Account chapters read" to state.publicProfile?.chaptersRead,
         "Downloaded chapters" to state.offlineChapters.size,
         "Downloaded titles" to state.offlineChapters.map { it.manga.id }.distinct().size,
         "Collections" to state.libraryCollections.size,
@@ -41,20 +41,19 @@ fun ProfileStatistics(state: AppState) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            Text("Statistics", style = MaterialTheme.typography.headlineSmall)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Your library", style = MaterialTheme.typography.titleLarge)
+                Text("All time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             metrics.chunked(2).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     row.forEach { (label, count) ->
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(count?.toString() ?: "—", style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.primary)
-                            Text(label, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        StatisticValue(label, count?.toString() ?: "—", Modifier.weight(1f))
                     }
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Text("Library status", style = MaterialTheme.typography.titleMedium)
             if (statuses.isEmpty()) {
                 Text("Add titles to your library to see their status distribution.",
@@ -85,7 +84,7 @@ fun ProfileStatistics(state: AppState) {
                     }
                 }
             }
-            Text("Library and download counts reflect data available on this device. Chapters read comes from your Comico account.",
+            Text("Current library and download totals on this device.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

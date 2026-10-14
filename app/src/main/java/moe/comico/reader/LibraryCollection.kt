@@ -3,12 +3,12 @@ package moe.comico.reader
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class LibraryCollection(val id: String, val name: String, val mangaIds: Set<String> = emptySet()) {
-    fun toJson() = JSONObject().put("id", id).put("name", name).put("mangaIds", JSONArray(mangaIds.toList()))
+data class LibraryCollection(val id: String, val name: String, val mangaIds: Set<String> = emptySet(), val remoteId: String? = null) {
+    fun toJson() = JSONObject().put("id", id).put("name", name).put("mangaIds", JSONArray(mangaIds.toList())).put("remoteId", remoteId ?: JSONObject.NULL)
 }
 fun JSONObject.libraryCollection(): LibraryCollection {
     val ids = optJSONArray("mangaIds") ?: JSONArray()
-    return LibraryCollection(getString("id"), getString("name"), (0 until ids.length()).map { ids.getString(it) }.toSet())
+    return LibraryCollection(getString("id"), getString("name"), (0 until ids.length()).map { ids.getString(it) }.toSet(), optString("remoteId").takeUnless { it.isBlank() || it == "null" })
 }
 fun moveLibraryCollection(collections: List<LibraryCollection>, id: String, direction: Int): List<LibraryCollection> {
     val from = collections.indexOfFirst { it.id == id }

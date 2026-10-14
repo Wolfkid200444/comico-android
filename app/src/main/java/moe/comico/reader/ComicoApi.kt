@@ -36,7 +36,7 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
         val request = Request.Builder().url(url)
             .header("User-Agent", "ComicoAndroid/${BuildConfig.VERSION_NAME} (https://github.com/Wolfkid200444/comico-android)")
             .apply { if(url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/")) header("Origin",BASE_URL) }
-            .apply { if(method != "GET") method(method,if(method == "DELETE") null else (body ?: JSONObject()).toString().toRequestBody("application/json".toMediaType())) }
+            .apply { if(method != "GET") method(method,if(method == "DELETE" && body == null) null else (body ?: JSONObject()).toString().toRequestBody("application/json".toMediaType())) }
             .build()
         client.newCall(request).withResponse { response ->
             if (!response.isSuccessful && url.toHttpUrl().host == "comico.moe" && url.toHttpUrl().encodedPath.startsWith("/api/auth/")) {
@@ -122,6 +122,56 @@ class ComicoApi(private val accountCookies: AccountCookieJar? = null, private va
     suspend fun post(path: String, query: Map<String, String>, body: JSONObject): JSONObject {
         val url = (baseUrl + path).toHttpUrl().newBuilder().apply { query.forEach { (k,v) -> addQueryParameter(k,v) } }.build()
         return JSONObject(requestText(url.toString(), body))
+    }
+    suspend fun collections(): List<LibraryCollection> {
+        val result = linkedMapOf<String, LibraryCollection>()
+        var offset = 0
+        while (true) {
+            val data = get("/api/collections", mapOf("limit" to "100", "offset" to offset.toString()))
+            val items = data.getJSONArray("items").objects()
+            val previousSize = result.size
+            items.forEach { item ->
+                val id = item.getString("id")
+                result[id] = LibraryCollection(id, item.getString("name"), remoteId = id)
+            }
+            if (items.isNotEmpty() && result.size == previousSize) throw IOException("Collection pages stopped advancing.")
+            offset += items.size
+            if (items.isEmpty() || offset >= data.getInt("total")) break
+        }
+        return result.values.toList()
+    }
+    suspend fun collectionMembers(collection: LibraryCollection): LibraryCollection {
+        val id = collection.remoteId ?: error("Collection has no account ID.")
+        val ids = linkedSetOf<String>()
+        var offset = 0
+        while (true) {
+            val data = get("/api/collections/$id", mapOf("limit" to "100", "offset" to offset.toString()))
+            val items = data.getJSONArray("items").objects()
+            val previousSize = ids.size
+            items.forEach { item ->
+                val manga = item.optJSONObject("manga")
+                val mangaId = item.optString("mangaId").takeUnless { it.isBlank() || it == "null" }
+                    ?: manga?.getString("id")
+                    ?: if (item.has("title")) item.getString("id") else error("Unrecognized collection membership response.")
+                ids += mangaId
+            }
+            if (items.isNotEmpty() && ids.size == previousSize) throw IOException("Collection item pages stopped advancing.")
+            offset += items.size
+            if (items.size < 100 || offset >= data.optInt("total", Int.MAX_VALUE)) break
+        }
+        return collection.copy(mangaIds = ids)
+    }
+    suspend fun createCollection(name: String): String {
+        val data = JSONObject(requestText("$baseUrl/api/collections",
+            JSONObject().put("name", name).put("isPublic", false)))
+        return (data.optJSONObject("collection") ?: data).getString("id")
+    }
+    suspend fun renameCollection(id: String, name: String) {
+        requestText("$baseUrl/api/collections/$id", JSONObject().put("name", name), "PATCH")
+    }
+    suspend fun deleteCollection(id: String) { requestText("$baseUrl/api/collections/$id", method = "DELETE") }
+    suspend fun changeCollectionMember(id: String, mangaId: String, add: Boolean) {
+        requestText("$baseUrl/api/collections/$id/items", JSONObject().put("mangaId", mangaId), if (add) "POST" else "DELETE")
     }
     suspend fun chapterNotifications(): List<ChapterAlert> =
         get("/api/notifications", mapOf("tab" to "comics", "limit" to "100"))

@@ -21,6 +21,7 @@ fun CollectionManager(state: AppState, model: ReaderViewModel, close: () -> Unit
     if (editor && current != null) CollectionEditor(current, model) { editor = false }
     else AlertDialog(onDismissRequest = close, title = { Text("Edit Collections") }, text = {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+            item { SyncStatus(state, model); Spacer(Modifier.height(12.dp)) }
             if (state.libraryCollections.isEmpty()) item { Text("Use + in the library to create a collection.") }
             itemsIndexed(state.libraryCollections, key = { _, collection -> collection.id }) { index, collection ->
                 Surface(color = if (selected == collection.id) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,

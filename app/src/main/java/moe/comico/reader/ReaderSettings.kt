@@ -35,6 +35,9 @@ fun GlobalReaderOptions(state: AppState, model: ReaderViewModel) {
         SettingChoice("Reading mode", config.mode, ReadingMode.entries.map { it to it.label }) { model.setGlobalReader(config.copy(mode = it)) }
         SettingChoice("Page navigation", config.navigation, ReaderNavigation.entries.map { it to it.label }) { model.setGlobalReader(config.copy(navigation = it)) }
         Text("Long strip always scrolls vertically. Single and double pages can scroll vertically or swipe horizontally.",style = MaterialTheme.typography.bodySmall)
+        ListItem(headlineContent = { Text("Foldable book view") },
+            supportingContent = { Text("Show two pages across a vertical fold when unfolded. Long strips keep scrolling.") },
+            trailingContent = { Switch(config.foldableBook, onCheckedChange = { model.setGlobalReader(config.copy(foldableBook = it)) }) })
         SettingChoice("Page width", config.width, PageWidth.entries.map { it to it.label }) { model.setGlobalReader(config.copy(width = it)) }
         SettingChoice("Proxy method", config.proxy, ProxyMethod.entries.map { it to it.label }) { model.setGlobalReader(config.copy(proxy = it)) }
         SettingChoice("Preferred source", config.source, sourceChoices(state.knownSources,config.source)) { model.setGlobalReader(config.copy(source = it)) }
@@ -48,6 +51,10 @@ fun GlobalReaderOptions(state: AppState, model: ReaderViewModel) {
 private fun MangaReaderOptions(state: AppState, model: ReaderViewModel) {
     val config = state.readerOverrides[state.selected?.id] ?: ReaderOverride()
     val global = state.readerPreferences
+    SettingChoice("Foldable book view", config.foldableBook, listOf<Pair<Boolean?, String>>(
+        null to "Use global · ${if (global.foldableBook) "On" else "Off"}", true to "On", false to "Off")) {
+        model.setMangaReader(config.copy(foldableBook = it))
+    }
     SettingChoice("Reading mode", config.mode, listOf< Pair<ReadingMode?,String> >(null to "Use global · ${global.mode.label}") + ReadingMode.entries.map { it to it.label }) { model.setMangaReader(config.copy(mode = it)) }
     SettingChoice("Page navigation",config.navigation,listOf<Pair<ReaderNavigation?,String>>(null to "Use global · ${global.navigation.label}") + ReaderNavigation.entries.map { it to it.label }) { model.setMangaReader(config.copy(navigation = it)) }
     SettingChoice("Page width", config.width, listOf<Pair<PageWidth?,String>>(null to "Use global · ${global.width.label}") + PageWidth.entries.map { it to it.label }) { model.setMangaReader(config.copy(width = it)) }

@@ -119,7 +119,7 @@ fun ProfileScreen(state: AppState, model: ReaderViewModel) {
                 Surface(onClick = { model.tab("Statistics") }, shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceContainerLow) {
                     ListItem(headlineContent = { Text("Statistics") },
-                        supportingContent = { Text("Reading, library and downloads") },
+                        supportingContent = { Text("Reading activity, streaks and library totals") },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         leadingContent = { Icon(Icons.Rounded.BarChart, null) },
                         trailingContent = { Icon(Icons.Rounded.ChevronRight, null) })

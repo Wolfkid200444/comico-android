@@ -19,6 +19,7 @@ import org.json.JSONObject
 
 data class AppState(
     val offline: Boolean = false,
+    val readingDays: List<ReadingDay> = emptyList(),
     val chapterReadMarks: Map<String, Boolean> = emptyMap(),
     val chapterCommentIndicators: Map<String, Int> = emptyMap(),
     val feed: DiscoverFeed? = null, val feedPage: DiscoverPage = DiscoverPage(),
@@ -382,7 +383,130 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         persistCollections()
     }
     private fun persistCollections() {
+        val before = runCatching { JSONArray(prefs.getString(ownerKey("libraryCollections"), "[]"))
+            .objects().map { it.libraryCollection() } }.getOrDefault(emptyList())
+        val queued = runCatching { JSONArray(prefs.getString(ownerKey("collectionChanges"), "[]"))
+            .objects().map { it.collectionChange() }.associateBy { it.id } }.getOrDefault(emptyMap())
+        val collections = mutable.value.libraryCollections
+        val changes = queueCollectionChanges(before, collections, queued)
+        prefs.edit().putString(ownerKey("libraryCollections"), JSONArray(collections.map { it.toJson() }).toString())
+            .putString(ownerKey("collectionChanges"), JSONArray(changes.values.map { it.toJson() }).toString()).apply()
+        syncAccount()
+    }
+    private fun collectionChanges() = runCatching {
+        JSONArray(prefs.getString(ownerKey("collectionChanges"), "[]")).objects()
+            .map { it.collectionChange() }.associateBy { it.id }
+    }.getOrDefault(emptyMap())
+    private fun storeCollectionChanges(changes: Map<String, CollectionChange>) {
+        prefs.edit().putString(ownerKey("collectionChanges"), JSONArray(changes.values.map { it.toJson() }).toString()).apply()
+    }
+    private fun storeCollectionSnapshot() {
         prefs.edit().putString(ownerKey("libraryCollections"), JSONArray(mutable.value.libraryCollections.map { it.toJson() }).toString()).apply()
+    }
+    private fun adoptGuestCollections(owner: String) {
+        val guest = runCatching { JSONArray(prefs.getString("libraryCollections", "[]")).objects()
+            .map { it.libraryCollection() } }.getOrDefault(emptyList())
+        val unclaimed = guest.filter { !prefs.contains("guestCollectionOwner:${it.id}") }
+        if (unclaimed.isEmpty()) return
+        val before = mutable.value.libraryCollections
+        val merged = mergeGuestCollections(before, unclaimed)
+        mutable.update { it.copy(libraryCollections = merged) }
+        val members = unclaimed.flatMap { it.mangaIds }.toSet()
+        val titles = runCatching { JSONArray(prefs.getString("library", "[]")).objects().map { it.manga() } }
+            .getOrDefault(emptyList()).filter { it.id in members && !it.id.startsWith("local-") }
+        val bookmarks = pending("bookmarks")
+        titles.forEach { bookmarks.put(it.id, true) }
+        mutable.update { it.copy(library = (it.library + titles).distinctBy { m -> m.id }) }
+        persistLibrary()
+        val changes = queueCollectionChanges(before, mutable.value.libraryCollections, collectionChanges())
+        storeCollectionChanges(changes)
+        storeCollectionSnapshot()
+        prefs.edit().apply {
+            unclaimed.forEach { putString("guestCollectionOwner:${it.id}", owner) }
+            putString(ownerKey("pending:bookmarks"), bookmarks.toString())
+        }.apply()
+    }
+    private var lastCollectionSyncOwner: String? = null
+    private var lastCollectionSyncAt = 0L
+    private suspend fun syncCollections(owner: String) {
+        fun guard() { if (activeOwner != owner) throw CancellationException("Account changed.") }
+        guard()
+        if (lastCollectionSyncOwner == owner && collectionChanges().isEmpty() &&
+            mutable.value.libraryCollections.all { it.remoteId != null } &&
+            android.os.SystemClock.elapsedRealtime() - lastCollectionSyncAt < 5 * 60_000) return
+        val remote = api.collections().toMutableList()
+        guard()
+        // Existing local-only collections need to be uploaded as well as newly queued edits.
+        val seeded = collectionChanges().toMutableMap()
+        mutable.value.libraryCollections.filter { it.remoteId == null }.forEach { local ->
+            val change = seeded[local.id] ?: CollectionChange(local.id)
+            seeded[local.id] = change.copy(name = local.name, added = local.mangaIds, removed = emptySet())
+        }
+        storeCollectionChanges(seeded)
+        for ((id, sent) in collectionChanges()) {
+            guard()
+            if (sent.deleted) {
+                sent.remoteId?.let { remoteId ->
+                    if (remote.any { it.remoteId == remoteId }) { api.deleteCollection(remoteId); guard() }
+                    remote.removeAll { it.remoteId == remoteId }
+                }
+            } else {
+                val local = mutable.value.libraryCollections.firstOrNull { it.id == id } ?: continue
+                var remoteId = local.remoteId
+                check(remoteId == null || remote.any { it.remoteId == remoteId }) {
+                    "Collection '${local.name}' was removed on Comico. Your pending edits remain saved locally."
+                }
+                if (remoteId == null) {
+                    val matches = remote.filter { it.name.equals(local.name, true) }
+                    check(matches.size <= 1) { "Several account collections have the name '${local.name}'. Rename the local collection to sync it." }
+                    remoteId = matches.singleOrNull()?.remoteId ?: api.createCollection(local.name)
+                    guard()
+                    mutable.update { it.copy(libraryCollections = it.libraryCollections.map { c -> if (c.id == id) c.copy(remoteId = remoteId) else c }) }
+                    val changes = collectionChanges()
+                    changes[id]?.let { change -> storeCollectionChanges(changes + (id to change.copy(remoteId = remoteId))) }
+                    storeCollectionSnapshot()
+                }
+                val remoteCollection = remote.firstOrNull { it.remoteId == remoteId }
+                    ?: LibraryCollection(remoteId, local.name, remoteId = remoteId).also { remote += it }
+                val full = api.collectionMembers(remoteCollection)
+                guard()
+                val desired = applyCollectionChange(full, sent)!!
+                if (desired.name != full.name) { api.renameCollection(remoteId, desired.name); guard() }
+                (desired.mangaIds - full.mangaIds).filterNot { it.startsWith("local-") }.forEach {
+                    delay(1000)
+                    guard(); api.changeCollectionMember(remoteId, it, true); guard()
+                }
+                (full.mangaIds - desired.mangaIds).forEach { delay(1000); guard(); api.changeCollectionMember(remoteId, it, false); guard() }
+            }
+            val current = collectionChanges()
+            // Preserve edits made while a request was in flight.
+            val acknowledged = current[id]
+            if (acknowledged == sent || acknowledged == sent.copy(remoteId = acknowledged?.remoteId)) {
+                storeCollectionChanges(current - id)
+            }
+        }
+        val fetched = api.collections()
+        guard()
+        val complete = fetched.map { api.collectionMembers(it).also { guard() } }
+        val current = mutable.value.libraryCollections
+        val queued = collectionChanges()
+        val linked = current.mapNotNull { local ->
+            val server = complete.firstOrNull { it.remoteId == local.remoteId }
+            if (server == null) local.takeIf { it.remoteId == null || queued.containsKey(it.id) }
+            else {
+                val merged = server.copy(id = local.id, mangaIds = server.mangaIds + local.mangaIds.filter { it.startsWith("local-") })
+                queued[local.id]?.let { applyCollectionChange(merged, it) } ?: merged
+            }
+        }
+        val imported = complete.filter { server -> current.none { it.remoteId == server.remoteId } &&
+            queued.values.none { it.deleted && it.remoteId == server.remoteId } }
+        mutable.update { it.copy(libraryCollections = linked + imported) }
+        storeCollectionSnapshot()
+        lastCollectionSyncOwner = owner
+        lastCollectionSyncAt = android.os.SystemClock.elapsedRealtime()
+        val selected = mutable.value.libraryOptions.collection
+        if (selected != null && mutable.value.libraryCollections.none { it.id == selected })
+            libraryOptions(mutable.value.libraryOptions.copy(collection = null))
     }
     fun librarySearch(value: String) { mutable.update { it.copy(libraryQuery = value) } }
     fun toggleLibrarySearch() { mutable.update { it.copy(librarySearchVisible = !it.librarySearchVisible,libraryQuery = if(it.librarySearchVisible) "" else it.libraryQuery) } }
@@ -608,6 +732,14 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
             finally { archive.delete() }
         }
     }
+    fun recordReading(chapterId: String, owner: String?, sessionId: String, start: java.time.Instant,
+        end: java.time.Instant, pages: List<Int>) {
+        if (activeOwner != owner || mutable.value.reader?.id != chapterId) return
+        val days = recordReadingTime(mutable.value.readingDays, start, end, java.time.ZoneId.systemDefault(),
+            sessionId, chapterId, pages)
+        mutable.update { it.copy(readingDays = days) }
+        prefs.edit().putString(ownerKey("readingDays"), JSONArray(days.map { it.toJson() }).toString()).apply()
+    }
     fun readerPage(page: Int) {
         val chapter = mutable.value.reader ?: return
         val count = mutable.value.nativeReader.session?.pages?.size ?: return
@@ -695,11 +827,14 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         val collections = runCatching { JSONArray(prefs.getString(ownerKey("libraryCollections"), "[]")).objects().map { it.libraryCollection() } }.getOrDefault(emptyList())
         val options = runCatching { JSONObject(prefs.getString(ownerKey("libraryOptions"), "{}")!!).libraryOptions() }.getOrDefault(LibraryOptions())
         mutable.update { it.copy(libraryCollections = collections, libraryOptions = options.copy(collection = options.collection?.takeIf { id -> collections.any { it.id == id } })) }
+        val activity = runCatching { JSONArray(prefs.getString(ownerKey("readingDays"), "[]")).objects().map { it.readingDay() } }.getOrDefault(emptyList())
+        mutable.update { it.copy(readingDays = activity) }
         val history = runCatching { JSONArray(prefs.getString(ownerKey("history"),"[]")).objects().map { it.historyEntry() }.filterNot { it.isLocalChapter() } }.getOrDefault(emptyList())
         val progress = runCatching { JSONObject(prefs.getString(ownerKey("progress"),"{}")!!).let { obj -> obj.keys().asSequence().associateWith { obj.getJSONObject(it).chapter() } } }.getOrDefault(emptyMap())
         mutable.update { it.copy(library = library,libraryQuery = "",librarySearchVisible = false,history = history,progress = progress.filterNot { (id, chapter) -> id.startsWith("local-") || chapter.id.startsWith("local-") },syncError = null,lastSync = null,publicProfile = null,comments = emptyList(),profileBio = "",profileSettings = ProfileEdit(),accountDataError = null,discoverSections = it.discoverSections.filterKeys { feed -> !feed.accountOnly }) }
     }
     private fun activateAccount(user: AccountUser?) {
+        if (activeOwner != user?.id) syncJob?.cancel()
         downloads.cancelOtherOwners(user?.id)
         imageCacheJob?.cancel()
         prefs.edit().apply { if (user == null) remove("localLibraryOwner") else putString("localLibraryOwner", user.id) }.apply()
@@ -708,7 +843,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         discussion.close()
         mutable.update { it.copy(commentBusyId = null, commentErrors = emptyMap()) }
         if(activeOwner != user?.id) loadOwner(user?.id)
-        if(user != null) { syncAccount();loadAccountData() }
+        if(user != null) { adoptGuestCollections(user.id); syncAccount();loadAccountData() }
         if(mutable.value.tab == "Discover") loadDiscover()
     }
     fun openFeed(feed: DiscoverFeed) {
@@ -797,6 +932,9 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                     mutable.update { it.copy(library = (remote.filterNot { m -> queued.has(m.id) && !queued.getBoolean(m.id) } + additions).distinctBy { m -> m.id }) }
                     persistLibrary()
                 } catch(e: CancellationException) { throw e } catch(e: Exception) { failures += "Library: ${e.message}" }
+                try { syncCollections(user.id) }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) { failures += "Collections: ${e.message}" }
                 try {
                     val remote = api.history()
                     val queued = remoteProgressQueue(pending("progress"))
@@ -821,7 +959,7 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
                 if(mutable.value.tab == "Discover") loadDiscoverFeed(DiscoverFeed.UPDATES)
             } finally {
                 mutable.update { it.copy(syncLoading = false) }
-                if(allowFollowUp && failures.isEmpty() && (pending("bookmarks").length() > 0 || pending("progress").length() > 0)) syncAccount(allowFollowUp = false)
+                if(allowFollowUp && failures.isEmpty() && (pending("bookmarks").length() > 0 || pending("progress").length() > 0 || collectionChanges().isNotEmpty())) syncAccount(allowFollowUp = false)
             }
         }
     }
@@ -917,17 +1055,17 @@ class ReaderViewModel(application: Application): AndroidViewModel(application) {
         prefs.edit().putString(ownerKey("pending:bookmarks"),bookmarks.toString()).putString(ownerKey("pending:progress"),progress.toString()).apply()
         syncAccount()
     }
-    fun exportData() = JSONObject().put("version",2).put("collections", JSONArray(mutable.value.libraryCollections.map { it.toJson() })).put("libraryOptions", mutable.value.libraryOptions.toJson()).put("library",JSONArray(mutable.value.library.map { it.toJson() })).put("history",JSONArray(mutable.value.history.map { it.toJson() })).put("readerDefaults",mutable.value.readerPreferences.toJson()).toString(2)
+    fun exportData() = JSONObject().put("version",2).put("collections", JSONArray(mutable.value.libraryCollections.map { it.toJson() })).put("libraryOptions", mutable.value.libraryOptions.toJson()).put("library",JSONArray(mutable.value.library.map { it.toJson() })).put("history",JSONArray(mutable.value.history.map { it.toJson() })).put("readerDefaults",mutable.value.readerPreferences.toJson()).put("readingActivity", JSONArray(mutable.value.readingDays.map { it.toJson() })).toString(2)
     fun clearHistory() {
         if(mutable.value.syncLoading || mutable.value.account.loading) return
         viewModelScope.launch {
             mutable.update { it.copy(syncLoading = true,syncError = null) }
             try {
                 if(mutable.value.account.user != null && !mutable.value.offline) api.clearHistory()
-                mutable.update { it.copy(history = emptyList(),progress = emptyMap()) }
+                mutable.update { it.copy(history = emptyList(),progress = emptyMap(), readingDays = emptyList()) }
                 persistHistory()
                 prefs.edit().apply {
-                    remove(ownerKey("progress"));remove(ownerKey("pending:progress"))
+                    remove(ownerKey("progress"));remove(ownerKey("pending:progress"));remove(ownerKey("readingDays"))
                     val suffix = activeOwner?.let { ":account:$it" }
                     prefs.all.keys.filter { key -> key.startsWith("readerPage:") && if(suffix == null) !key.contains(":account:") else key.endsWith(suffix) }.forEach { remove(it) }
                 }.apply()

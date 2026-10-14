@@ -2,6 +2,15 @@
 package moe.comico.reader
 
 import android.content.Intent
+import android.app.Activity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -48,8 +57,19 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
     val chapter = state.reader ?: return
     val reader = state.nativeReader
     val preferences = state.effectiveReaderPreferences()
-    val mode = preferences.modeFor(state.selected?.format.orEmpty())
+    val baseMode = preferences.modeFor(state.selected?.format.orEmpty())
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val foldFlow: kotlinx.coroutines.flow.Flow<FoldingFeature?> = remember(context) {
+        (context as? Activity)?.let { activity ->
+            WindowInfoTracker.getOrCreate(context).windowLayoutInfo(activity).map { info ->
+                info.displayFeatures.filterIsInstance<FoldingFeature>()
+                    .firstOrNull { it.orientation == FoldingFeature.Orientation.VERTICAL }
+            }
+        } ?: flowOf(null)
+    }
+    val fold by foldFlow.collectAsStateWithLifecycle(initialValue = null)
+    var readerOrigin by remember { mutableStateOf(Offset.Zero) }
     var settings by remember { mutableStateOf(false) }
     var controls by rememberSaveable(chapter.id) { mutableStateOf(false) }
     var chapterPicker by rememberSaveable { mutableStateOf(false) }
@@ -64,16 +84,26 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
         if(uri.scheme in listOf("https","http")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,uri)) }
     }
     Surface(Modifier.fillMaxSize(), color = Color(0xFF101014), contentColor = Color.White) {
-        Box(Modifier.fillMaxSize().pointerInput(chapter.id) {
+        BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { readerOrigin = it.positionInWindow() }.pointerInput(chapter.id) {
             detectTapGestures(onTap = { position ->
                 if(position.x in size.width * .25f..size.width * .75f) controls = !controls
             })
         }) {
+            val readerWidth = maxWidth.value
+            val panes = fold?.let {
+                readerBookPanes(readerWidth, (it.bounds.left - readerOrigin.x) / density.density,
+                    (it.bounds.right - readerOrigin.x) / density.density)
+            }
+            val book = useFoldableBook(preferences.foldableBook, baseMode, panes)
+            val mode = if (book) ReadingMode.DOUBLE else baseMode
             when {
                 reader.loading -> Column(Modifier.align(Alignment.Center).padding(24.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Text("Loading chapter images…") }
                 reader.session != null -> {
                     val session = reader.session
-                    if(usesVerticalScrolling(mode,preferences.navigation)) {
+                    ReadingSessionTracker(chapter.id, spreadPages(session.pages.size, reader.page,
+                        mode == ReadingMode.DOUBLE, preferences.direction),
+                        !reader.loading && !settings && !chapterPicker && discussion.target == null, model)
+                    if(!book && usesVerticalScrolling(mode,preferences.navigation)) {
                         val groupSize = readingGroupSize(mode)
                         val count = (session.pages.size + groupSize - 1) / groupSize
                         val list = rememberLazyListState(initialFirstVisibleItemIndex = reader.page / groupSize)
@@ -103,7 +133,10 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
                         LaunchedEffect(pageJump) { pageJump?.let { pager.scrollToPage((it / spreadSize).coerceIn(0,count-1)); model.readerPage(it / spreadSize * spreadSize); pageJump = null } }
                         HorizontalPager(state = pager,modifier = Modifier.fillMaxSize(),reverseLayout = preferences.direction == ReadingDirection.RTL,beyondViewportPageCount = 1) { spread ->
                             Box(Modifier.fillMaxSize(),contentAlignment = Alignment.Center) {
-                                Row(Modifier.fillMaxWidth(preferences.width.fraction).fillMaxHeight(),horizontalArrangement = Arrangement.spacedBy(2.dp),verticalAlignment = Alignment.CenterVertically) {
+                                if (book && panes != null) {
+                                    ReaderBookSpread(session.pages, spread * spreadSize, preferences, panes,
+                                        onTap = { controls = !controls }, onReload = model::loadReader)
+                                } else Row(Modifier.fillMaxWidth(preferences.width.fraction).fillMaxHeight(),horizontalArrangement = Arrangement.spacedBy(2.dp),verticalAlignment = Alignment.CenterVertically) {
                                     spreadPages(session.pages.size,spread * spreadSize,spreadSize == 2,preferences.direction).forEach { index ->
                                         ChapterImage(session.pages[index],index,false,Modifier.weight(1f).fillMaxHeight(),{ controls = !controls },model::loadReader)
                                     }
@@ -136,6 +169,25 @@ fun ReaderScreen(state: AppState, model: ReaderViewModel) {
             if(!controls && reader.session != null) ReaderPageCounter(reader.page + 1, reader.session.pages.size,
                 Modifier.align(Alignment.BottomCenter))
 
+        }
+    }
+}
+
+@Composable
+private fun ReaderBookSpread(pages: List<String>, first: Int, preferences: ReaderPreferences,
+    panes: BookPanes, onTap: () -> Unit, onReload: () -> Unit) {
+    val slots = bookSpreadPages(pages.size, first, preferences.direction)
+    // Pane coordinates are physical left/right, independent of the phone's UI language.
+    CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            slots.forEachIndexed { side, index ->
+                if (side == 1) Spacer(Modifier.width(panes.gap.dp).fillMaxHeight().background(Color.Black))
+                Box(Modifier.width((if (side == 0) panes.left else panes.right).dp).fillMaxHeight(),
+                    contentAlignment = Alignment.Center) {
+                    if (index != null) ChapterImage(pages[index], index, false,
+                        Modifier.fillMaxWidth(preferences.width.fraction).fillMaxHeight(), onTap, onReload)
+                }
+            }
         }
     }
 }
